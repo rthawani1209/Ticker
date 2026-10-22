@@ -38,6 +38,7 @@ if(TICKER_BUILD_TESTS)
   enable_testing()
   add_executable(engine_tests
     tests/containers_test.cpp
+    tests/differential_test.cpp
     tests/order_book_test.cpp
   )
   target_link_libraries(engine_tests PRIVATE ticker_core GTest::gtest_main)
