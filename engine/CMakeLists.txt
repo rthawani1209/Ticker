@@ -19,8 +19,12 @@ if(TICKER_SANITIZE)
   add_link_options(-fsanitize=${TICKER_SANITIZE})
 endif()
 
-add_library(ticker_core INTERFACE)
-target_include_directories(ticker_core INTERFACE include)
+add_library(ticker_core
+  src/engine.cpp
+  src/order_book.cpp
+  src/types.cpp
+)
+target_include_directories(ticker_core PUBLIC include)
 
 if(TICKER_BUILD_TESTS)
   include(FetchContent)
@@ -34,6 +38,7 @@ if(TICKER_BUILD_TESTS)
   enable_testing()
   add_executable(engine_tests
     tests/containers_test.cpp
+    tests/order_book_test.cpp
   )
   target_link_libraries(engine_tests PRIVATE ticker_core GTest::gtest_main)
   include(GoogleTest)
