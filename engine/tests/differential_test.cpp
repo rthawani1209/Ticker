@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <random>
 #include <sstream>
+#include <unordered_map>
 
 #include "reference_book.hpp"
 #include "ticker/order_book.hpp"
@@ -30,6 +31,8 @@ public:
         // Let the "fair price" drift so the book moves around and the band gets exercised.
         mid_ += Price(rng_() % 5) - 2;
         mid_ = std::clamp<Price>(mid_, cfg_.ref_price / 2, cfg_.ref_price * 3 / 2);
+        // Stay near the last trade, otherwise the price band rejects everything.
+        if (last_trade_) mid_ = (mid_ * 7 + last_trade_) / 8;
 
         Command c{};
         c.symbol = 0;
@@ -71,22 +74,37 @@ public:
         return c;
     }
 
+    // Tracks which orders are still resting so cancels and replaces mostly hit
+    // something. Without this a small book clogs up with stale orders and stops trading.
     void observe(const std::vector<Event>& evs) {
         for (auto& e : evs) {
-            if (e.type == EventType::Ack) live_.push_back(e.order_id);
+            if (e.type == EventType::Ack) {
+                pos_[e.order_id] = live_.size();
+                live_.push_back(e.order_id);
+                last_dead_ = e.order_id;
+            } else if (e.type == EventType::Trade) {
+                last_trade_ = e.price;
+            } else if (e.type == EventType::Cancelled || (e.type == EventType::Fill && e.leaves == 0)) {
+                forget(e.order_id);
+            }
         }
     }
 
 private:
     OrderId pick_live() {
-        // Old ids that are already gone are fine; they test the UnknownOrder path.
-        std::size_t i = rng_() % live_.size();
-        OrderId id = live_[i];
-        if (live_.size() > 4000) {
-            live_[i] = live_.back();
-            live_.pop_back();
-        }
-        return id;
+        // Now and then target an order that's gone, to test the UnknownOrder path.
+        if (rng_() % 20 == 0) return last_dead_ - rng_() % 50;
+        return live_[rng_() % live_.size()];
+    }
+
+    void forget(OrderId id) {
+        auto it = pos_.find(id);
+        if (it == pos_.end()) return;
+        std::size_t i = it->second;
+        live_[i] = live_.back();
+        pos_[live_[i]] = i;
+        live_.pop_back();
+        pos_.erase(id);
     }
 
     std::mt19937_64 rng_;
@@ -94,6 +112,9 @@ private:
     Price mid_;
     std::uint64_t cl_ = 0;
     std::vector<OrderId> live_;
+    std::unordered_map<OrderId, std::size_t> pos_;
+    OrderId last_dead_ = 0;
+    Price last_trade_ = 0;
 };
 
 void run(std::uint64_t seed, std::size_t commands, const SymbolConfig& cfg) {
@@ -121,7 +142,7 @@ void run(std::uint64_t seed, std::size_t commands, const SymbolConfig& cfg) {
         gen.observe(a);
     }
     EXPECT_EQ(fast.order_count(), ref.order_count());
-    EXPECT_GT(trades, commands / 200) << "generator isn't producing enough trades to be a useful test";
+    EXPECT_GT(trades, commands / 20) << "generator isn't producing enough trades to be a useful test";
 }
 
 std::size_t budget(std::size_t dflt) {
