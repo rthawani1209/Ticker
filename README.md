@@ -8,6 +8,22 @@ Students get fake money and trade against each other and against bots on a real 
 
 > Work in progress. The matching engine is being built first; the web app, bots and league features follow.
 
+## Repo layout
+
+```
+Ticker/
+├── engine/        C++20 matching engine (the exchange): order book, matching, risk checks
+│   ├── include/   public headers
+│   ├── src/       implementation
+│   └── tests/     unit tests and the differential fuzz test
+├── backend/       Node.js API: logins, orders, leagues, cash and positions (coming)
+├── market-sim/    Python trading bots and the news engine (coming)
+├── frontend/      Next.js web app (coming)
+├── sdk/python/    starter kit for writing your own trading bot (coming)
+├── infra/         Docker Compose and AWS deploy (coming)
+└── docs/          architecture, design decisions, interview notes (coming)
+```
+
 ## Engine
 
 The exchange core is in [`engine/`](engine). It is a C++20 limit order book with price-time priority:
