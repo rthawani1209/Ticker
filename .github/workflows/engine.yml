@@ -46,3 +46,15 @@ jobs:
         env:
           TICKER_FUZZ_COMMANDS: "1000000"
         run: engine/build/engine_tests --gtest_filter='Differential*'
+
+  bench:
+    name: benchmarks
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: cmake -S engine -B engine/build -DCMAKE_BUILD_TYPE=Release -DTICKER_BUILD_TESTS=OFF
+      - run: cmake --build engine/build -j
+      - name: Latency
+        run: engine/build/latency | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Throughput
+        run: engine/build/book_bench --benchmark_min_time=0.2s

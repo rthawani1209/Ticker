@@ -11,6 +11,7 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 
 option(TICKER_BUILD_TESTS "Build unit tests" ON)
+option(TICKER_BUILD_BENCH "Build benchmarks" ON)
 set(TICKER_SANITIZE "" CACHE STRING "Sanitizers to enable, e.g. address,undefined or thread")
 
 add_compile_options(-Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wno-sign-conversion)
@@ -44,4 +45,30 @@ if(TICKER_BUILD_TESTS)
   target_link_libraries(engine_tests PRIVATE ticker_core GTest::gtest_main)
   include(GoogleTest)
   gtest_discover_tests(engine_tests DISCOVERY_TIMEOUT 60)
+
+  add_executable(alloc_test tests/alloc_test.cpp)
+  target_link_libraries(alloc_test PRIVATE ticker_core GTest::gtest_main)
+  # Sanitizers replace operator new themselves, so this check only runs in normal builds.
+  if(NOT TICKER_SANITIZE)
+    gtest_discover_tests(alloc_test)
+  endif()
+endif()
+
+if(TICKER_BUILD_BENCH)
+  include(FetchContent)
+  FetchContent_Declare(benchmark
+    GIT_REPOSITORY https://github.com/google/benchmark.git
+    GIT_TAG v1.9.1
+    GIT_SHALLOW TRUE)
+  set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "" FORCE)
+  set(BENCHMARK_ENABLE_GTEST_TESTS OFF CACHE BOOL "" FORCE)
+  FetchContent_MakeAvailable(benchmark)
+
+  add_executable(book_bench bench/book_bench.cpp)
+  target_include_directories(book_bench PRIVATE tests)
+  target_link_libraries(book_bench PRIVATE ticker_core benchmark::benchmark)
+
+  add_executable(latency bench/latency.cpp)
+  target_include_directories(latency PRIVATE tests)
+  target_link_libraries(latency PRIVATE ticker_core)
 endif()
