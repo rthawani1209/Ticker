@@ -17,6 +17,7 @@ SymbolConfig cfg() {
     c.band_bps = 2000;  // +-20%
     c.max_order_qty = 10'000;
     c.max_orders = 64;
+    c.circuit_bps = 0;  // breaker has its own tests below
     return c;
 }
 
@@ -366,4 +367,96 @@ TEST_F(BookTest, CancelWaitingStop) {
     EXPECT_EQ(evs[0].type, EventType::Cancelled);
     EXPECT_EQ(book.order_count(), 0u);
     EXPECT_EQ(send(replace(send(stop(Side::Buy, 1010, 5)).at(0).order_id, 1000, 5)).at(0).type, EventType::Reject);
+}
+
+namespace {
+
+class BreakerTest : public ::testing::Test {
+protected:
+    static SymbolConfig breaker_cfg() {
+        SymbolConfig c = cfg();
+        c.circuit_bps = 500;  // 5%
+        c.circuit_window_ns = 1'000;
+        c.halt_ns = 100;
+        return c;
+    }
+
+    OrderBook book{0, breaker_cfg()};
+    std::vector<Event> out;
+
+    std::vector<Event> send(Command c, std::uint64_t ts = 0) {
+        c.ts = ts;
+        out.clear();
+        book.process(c, out);
+        return out;
+    }
+};
+
+}  // namespace
+
+TEST_F(BreakerTest, TripsBeforeTradingOutsideTheLimit) {
+    send(limit(Side::Sell, 1040, 5, 1));
+    send(limit(Side::Sell, 1060, 5, 1));
+    auto evs = send(limit(Side::Buy, 1100, 10, 2), 10);
+    // Fills at 1040 (4% move), then halts instead of trading at 1060 (6%).
+    EXPECT_EQ(of_type(evs, EventType::Trade).size(), 1u);
+    auto status = of_type(evs, EventType::TradingStatus);
+    ASSERT_EQ(status.size(), 1u);
+    EXPECT_EQ(status[0].reason, 1);
+    EXPECT_EQ(status[0].level_qty, 110u);
+    auto c = of_type(evs, EventType::Cancelled);
+    ASSERT_EQ(c.size(), 1u);
+    EXPECT_EQ(c[0].reason, std::uint8_t(CancelReason::Halted));
+    EXPECT_EQ(c[0].qty, 5u);
+    EXPECT_TRUE(book.halted());
+}
+
+TEST_F(BreakerTest, HaltedBookRejectsNewOrdersButAllowsCancels) {
+    OrderId resting = send(limit(Side::Sell, 1060, 5, 1)).at(0).order_id;
+    send(limit(Side::Buy, 1100, 1, 2), 10);
+    ASSERT_TRUE(book.halted());
+    EXPECT_EQ(send(limit(Side::Buy, 1000, 1, 3), 20).at(0).reason, std::uint8_t(RejectReason::Halted));
+    EXPECT_EQ(send(cancel(resting, 1), 30).at(0).type, EventType::Cancelled);
+}
+
+TEST_F(BreakerTest, ReopensAfterHaltTime) {
+    send(limit(Side::Sell, 1060, 5, 1));
+    send(limit(Side::Buy, 1100, 1, 2), 10);
+    auto evs = send(limit(Side::Buy, 1000, 1, 3), 110);
+    ASSERT_GE(evs.size(), 2u);
+    EXPECT_EQ(evs[0].type, EventType::TradingStatus);
+    EXPECT_EQ(evs[0].reason, 0);
+    EXPECT_EQ(evs[1].type, EventType::Ack);
+}
+
+TEST_F(BreakerTest, AnchorMovesWithEachWindow) {
+    send(limit(Side::Sell, 1040, 1, 1));
+    send(limit(Side::Buy, 1040, 1, 2), 10);
+    // A new window starts from 1040, so 1080 (3.8% above it) no longer trips.
+    send(limit(Side::Sell, 1080, 1, 1), 1'500);
+    auto evs = send(limit(Side::Buy, 1080, 1, 2), 1'600);
+    EXPECT_EQ(of_type(evs, EventType::Trade).size(), 1u);
+    EXPECT_FALSE(book.halted());
+}
+
+TEST_F(BreakerTest, ManualHaltLastsUntilResume) {
+    Command h{};
+    h.type = CmdType::Halt;
+    EXPECT_EQ(send(h, 10).at(0).type, EventType::TradingStatus);
+    EXPECT_TRUE(send(h, 20).empty());
+    EXPECT_TRUE(book.halted());
+    send(limit(Side::Buy, 1000, 1), 1'000'000);
+    EXPECT_TRUE(book.halted());
+    Command r{};
+    r.type = CmdType::Resume;
+    EXPECT_EQ(send(r, 1'000'001).at(0).reason, 0);
+    EXPECT_FALSE(book.halted());
+}
+
+TEST_F(BreakerTest, FokNeverTripsHalfway) {
+    send(limit(Side::Sell, 1040, 5, 1));
+    send(limit(Side::Sell, 1060, 5, 1));
+    auto evs = send(limit(Side::Buy, 1100, 10, 2, TIF::FOK), 10);
+    EXPECT_TRUE(of_type(evs, EventType::Trade).empty());
+    EXPECT_FALSE(book.halted());
 }

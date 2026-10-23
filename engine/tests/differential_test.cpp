@@ -35,6 +35,8 @@ public:
         if (last_trade_) mid_ = (mid_ * 7 + last_trade_) / 8;
 
         Command c{};
+        now_ += rng_() % 2'000'000;  // up to 2ms between commands
+        c.ts = now_;
         c.symbol = 0;
         c.account = AccountId(1 + rng_() % 6);
         c.session = c.account;
@@ -52,6 +54,10 @@ public:
             c.qty = Qty(1 + rng_() % 50);
         } else if (roll < 31) {
             c.type = CmdType::Snapshot;
+        } else if (roll < 32 && rng_() % 8 == 0) {
+            c.type = CmdType::Halt;
+        } else if (halted_ && rng_() % 20 == 0) {
+            c.type = CmdType::Resume;  // an admin reopening the market
         } else if (roll < 33) {
             // Garbage the book has to reject cleanly.
             c.type = CmdType::New;
@@ -89,6 +95,8 @@ public:
                 pos_[e.order_id] = live_.size();
                 live_.push_back(e.order_id);
                 last_dead_ = e.order_id;
+            } else if (e.type == EventType::TradingStatus) {
+                halted_ = e.reason == 1;
             } else if (e.type == EventType::Trade) {
                 last_trade_ = e.price;
             } else if (e.type == EventType::Cancelled || (e.type == EventType::Fill && e.leaves == 0)) {
@@ -122,9 +130,11 @@ private:
     std::unordered_map<OrderId, std::size_t> pos_;
     OrderId last_dead_ = 0;
     Price last_trade_ = 0;
+    std::uint64_t now_ = 0;
+    bool halted_ = false;
 };
 
-void run(std::uint64_t seed, std::size_t commands, const SymbolConfig& cfg) {
+void run(std::uint64_t seed, std::size_t commands, const SymbolConfig& cfg, std::size_t min_trade_ratio = 20) {
     OrderBook fast(0, cfg);
     ReferenceBook ref(0, cfg);
     Generator gen(seed, cfg);
@@ -149,7 +159,7 @@ void run(std::uint64_t seed, std::size_t commands, const SymbolConfig& cfg) {
         gen.observe(a);
     }
     EXPECT_EQ(fast.order_count(), ref.order_count());
-    EXPECT_GT(trades, commands / 20) << "generator isn't producing enough trades to be a useful test";
+    EXPECT_GT(trades, commands / min_trade_ratio) << "generator isn't producing enough trades to be a useful test";
 }
 
 std::size_t budget(std::size_t dflt) {
@@ -176,10 +186,23 @@ TEST(Differential, TinyBookHitsCapacity) {
     for (std::uint64_t seed = 100; seed <= 104; ++seed) run(seed, budget(40'000), cfg);
 }
 
+TEST(Differential, CircuitBreakerTrips) {
+    SymbolConfig cfg;
+    cfg.max_price = 4096;
+    cfg.ref_price = 1000;
+    cfg.band_bps = 1000;
+    cfg.circuit_bps = 300;  // 3% so it trips often
+    cfg.circuit_window_ns = 200'000'000;
+    cfg.halt_ns = 30'000'000;
+    // Halted markets don't trade, so expect fewer trades here.
+    for (std::uint64_t seed = 300; seed <= 304; ++seed) run(seed, budget(40'000), cfg, 100);
+}
+
 TEST(Differential, WideBandLowPrices) {
     SymbolConfig cfg;
     cfg.max_price = 2048;
     cfg.ref_price = 40;
     cfg.band_bps = 9000;
+    cfg.circuit_bps = 0;  // one tick is 2.5% here, the breaker would never stay open
     for (std::uint64_t seed = 200; seed <= 204; ++seed) run(seed, budget(40'000), cfg);
 }

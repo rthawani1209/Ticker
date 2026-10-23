@@ -18,9 +18,27 @@ namespace ticker::testing {
 
 class ReferenceBook {
 public:
-    ReferenceBook(SymbolId symbol, const SymbolConfig& cfg) : symbol_(symbol), cfg_(cfg), ref_(cfg.ref_price) {}
+    ReferenceBook(SymbolId symbol, const SymbolConfig& cfg)
+        : symbol_(symbol), cfg_(cfg), ref_(cfg.ref_price), anchor_(cfg.ref_price) {}
 
     void process(const Command& c, std::vector<Event>& out) {
+        now_ = c.ts;
+        if (halted_ && now_ >= halt_until_) resume(out);
+        if (!halted_ && now_ >= anchor_ts_ + cfg_.circuit_window_ns) {
+            anchor_ = ref_;
+            anchor_ts_ = now_;
+        }
+        if (c.type == CmdType::Halt) {
+            if (!halted_) halt(UINT64_MAX, out);
+            halt_until_ = UINT64_MAX;
+            return;
+        }
+        if (c.type == CmdType::Resume) {
+            if (halted_) resume(out);
+            return;
+        }
+        if (halted_ && (c.type == CmdType::New || c.type == CmdType::Replace))
+            return reject(c, RejectReason::Halted, out);
         if (c.type == CmdType::New) return on_new(c, out);
         if (c.type == CmdType::Cancel) return on_cancel(c, out);
         if (c.type == CmdType::Replace) return on_replace(c, out);
@@ -53,6 +71,33 @@ private:
         OrdType type;
         TIF tif;
     };
+
+    bool trips(Price p) const {
+        return cfg_.circuit_bps && std::abs(p - anchor_) * 10'000 > anchor_ * Price(cfg_.circuit_bps);
+    }
+
+    void halt(std::uint64_t until, std::vector<Event>& out) {
+        halted_ = true;
+        halt_until_ = until;
+        Event e{};
+        e.type = EventType::TradingStatus;
+        e.symbol = symbol_;
+        e.reason = 1;
+        e.price = ref_;
+        e.level_qty = until == UINT64_MAX ? 0 : until;
+        out.push_back(e);
+    }
+
+    void resume(std::vector<Event>& out) {
+        halted_ = false;
+        anchor_ = ref_;
+        anchor_ts_ = now_;
+        Event e{};
+        e.type = EventType::TradingStatus;
+        e.symbol = symbol_;
+        e.price = ref_;
+        out.push_back(e);
+    }
 
     std::map<Price, Queue>& side_map(Side s) { return s == Side::Buy ? bids_ : asks_; }
 
@@ -167,7 +212,7 @@ private:
     }
 
     void run_stops(std::vector<Event>& out) {
-        for (;;) {
+        while (!halted_) {
             // Lowest triggered buy stop first, then highest triggered sell stop; ties by arrival.
             auto pick = stops_.end();
             for (auto it = stops_.begin(); it != stops_.end(); ++it)
@@ -224,6 +269,7 @@ private:
             bool blocked = false;
             for (Price p : prices_to_match(in.side)) {
                 if (!crosses(in.side, in.price, p) || blocked || have >= in.qty) break;
+                if (trips(p)) break;
                 for (auto& o : book[p]) {
                     if (o.account == in.account) {
                         blocked = true;
@@ -239,6 +285,10 @@ private:
         bool self_trade = false;
         for (Price p : prices_to_match(in.side)) {
             if (in.qty == 0 || self_trade || !crosses(in.side, in.price, p)) break;
+            if (trips(p)) {
+                halt(now_ + cfg_.halt_ns, out);
+                break;
+            }
             Queue& q = book[p];
             while (!q.empty() && in.qty > 0) {
                 Order& rest = q.front();
@@ -290,6 +340,7 @@ private:
         }
 
         if (in.qty == 0) return;
+        if (halted_) return cancel_in(CancelReason::Halted, in.qty);
         if (self_trade) return cancel_in(CancelReason::SelfTrade, in.qty);
         if (!can_rest) return cancel_in(CancelReason::Unfilled, in.qty);
         if (order_count() >= cfg_.max_orders) return cancel_in(CancelReason::BookFull, in.qty);
@@ -435,6 +486,11 @@ private:
     std::map<Price, Queue> bids_;
     std::map<Price, Queue> asks_;
     std::list<Stop> stops_;  // arrival order
+    std::uint64_t now_ = 0;
+    bool halted_ = false;
+    std::uint64_t halt_until_ = 0;
+    Price anchor_;
+    std::uint64_t anchor_ts_ = 0;
     std::uint64_t seq_ = 1;
     std::uint64_t trade_seq_ = 1;
 };

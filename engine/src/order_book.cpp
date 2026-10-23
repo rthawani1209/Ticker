@@ -17,19 +17,67 @@ OrderBook::OrderBook(SymbolId symbol, const SymbolConfig& cfg)
       buy_stop_tree_(std::size_t(cfg.max_price)),
       sell_stop_tree_(std::size_t(cfg.max_price)),
       ref_price_(cfg.ref_price),
+      anchor_price_(cfg.ref_price),
       pool_(cfg.max_orders),
       by_id_(cfg.max_orders) {
     assert(cfg.max_price > 1 && std::size_t(cfg.max_price) <= BitTree::kMaxBits);
 }
 
 void OrderBook::process(const Command& cmd, std::vector<Event>& out) {
+    on_clock(cmd.ts, out);
     switch (cmd.type) {
         case CmdType::New: on_new(cmd, out); break;
         case CmdType::Cancel: on_cancel(cmd, out); break;
         case CmdType::Replace: on_replace(cmd, out); break;
         case CmdType::Snapshot: on_snapshot(cmd, out); break;
+        case CmdType::Halt:
+            if (!halted_) halt(UINT64_MAX, out);
+            halt_until_ = UINT64_MAX;  // a manual halt lasts until someone resumes
+            break;
+        case CmdType::Resume:
+            if (halted_) resume(out);
+            break;
         default: reject(cmd, RejectReason::InvalidField, out); break;
     }
+}
+
+void OrderBook::on_clock(std::uint64_t ts, std::vector<Event>& out) {
+    now_ = ts;
+    if (halted_ && now_ >= halt_until_) resume(out);
+    if (!halted_ && now_ >= anchor_ts_ + cfg_.circuit_window_ns) {
+        anchor_price_ = ref_price_;
+        anchor_ts_ = now_;
+    }
+}
+
+bool OrderBook::trips_breaker(Price p) const {
+    if (cfg_.circuit_bps == 0) return false;
+    Price diff = p > anchor_price_ ? p - anchor_price_ : anchor_price_ - p;
+    return diff * 10'000 > anchor_price_ * Price(cfg_.circuit_bps);
+}
+
+void OrderBook::halt(std::uint64_t until, std::vector<Event>& out) {
+    halted_ = true;
+    halt_until_ = until;
+    Event e{};
+    e.type = EventType::TradingStatus;
+    e.symbol = symbol_;
+    e.reason = 1;
+    e.price = ref_price_;
+    e.level_qty = until == UINT64_MAX ? 0 : until;
+    out.push_back(e);
+}
+
+void OrderBook::resume(std::vector<Event>& out) {
+    halted_ = false;
+    anchor_price_ = ref_price_;
+    anchor_ts_ = now_;
+    Event e{};
+    e.type = EventType::TradingStatus;
+    e.symbol = symbol_;
+    e.reason = 0;
+    e.price = ref_price_;
+    out.push_back(e);
 }
 
 std::uint64_t OrderBook::depth_at(Side side, Price price) const {
@@ -59,6 +107,7 @@ void OrderBook::reject(const Command& cmd, RejectReason why, std::vector<Event>&
 }
 
 void OrderBook::on_new(const Command& cmd, std::vector<Event>& out) {
+    if (halted_) return reject(cmd, RejectReason::Halted, out);
     if (std::uint8_t(cmd.side) > 1 || std::uint8_t(cmd.ord_type) > 3 || std::uint8_t(cmd.tif) > 2)
         return reject(cmd, RejectReason::InvalidField, out);
     if (cmd.qty == 0) return reject(cmd, RejectReason::InvalidQty, out);
@@ -132,7 +181,7 @@ void OrderBook::add_stop(const Command& cmd, OrderId id, std::vector<Event>& out
 // Triggers every stop the last trade has reached. Triggered orders can trade and
 // move the price further, which can trigger more stops, so this loops until quiet.
 void OrderBook::run_stops(std::vector<Event>& out) {
-    for (;;) {
+    while (!halted_) {
         Order* o = nullptr;
         if (!buy_stop_tree_.empty()) {
             Price p = buy_stop_tree_.find_next(0);
@@ -177,6 +226,8 @@ bool OrderBook::fok_fillable(const Incoming& in) const {
     std::uint64_t have = 0;
     Price p = opp == Side::Buy ? best_bid_ : best_ask_;
     while (p > 0 && (in.side == Side::Buy ? p <= in.limit : p >= in.limit)) {
+        // A fill-or-kill must never trip the breaker halfway through.
+        if (trips_breaker(p)) return false;
         for (const Order* o = lv[p].head; o; o = o->next) {
             // Matching stops at our own order, so liquidity behind it doesn't count.
             if (o->account == in.account) return false;
@@ -212,10 +263,14 @@ void OrderBook::execute(const Incoming& in, std::vector<Event>& out) {
     Qty remaining = in.qty;
     bool self_trade = false;
 
-    while (remaining > 0 && !self_trade) {
+    while (remaining > 0 && !self_trade && !halted_) {
         const Price best = in.side == Side::Buy ? best_ask_ : best_bid_;
         if (best == 0) break;
         if (in.side == Side::Buy ? best > in.limit : best < in.limit) break;
+        if (trips_breaker(best)) {
+            halt(now_ + cfg_.halt_ns, out);
+            break;
+        }
 
         Level& level = opp_levels[best];
         Order* o = level.head;
@@ -276,6 +331,7 @@ void OrderBook::execute(const Incoming& in, std::vector<Event>& out) {
     }
 
     if (remaining == 0) return;
+    if (halted_) return cancelled(CancelReason::Halted, remaining);
     if (self_trade) return cancelled(CancelReason::SelfTrade, remaining);
     if (!in.can_rest) return cancelled(CancelReason::Unfilled, remaining);
 
@@ -321,6 +377,7 @@ void OrderBook::on_cancel(const Command& cmd, std::vector<Event>& out) {
 }
 
 void OrderBook::on_replace(const Command& cmd, std::vector<Event>& out) {
+    if (halted_) return reject(cmd, RejectReason::Halted, out);
     if (cmd.qty == 0) return reject(cmd, RejectReason::InvalidQty, out);
     if (cmd.qty > cfg_.max_order_qty) return reject(cmd, RejectReason::MaxQtyExceeded, out);
     if (auto r = check_price(cmd.price); r != RejectReason::None) return reject(cmd, r, out);

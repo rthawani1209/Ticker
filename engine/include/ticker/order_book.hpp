@@ -33,6 +33,7 @@ public:
     std::uint64_t depth_at(Side side, Price price) const;
     std::size_t order_count() const { return pool_.in_use(); }
     Price reference_price() const { return ref_price_; }
+    bool halted() const { return halted_; }
     SymbolId symbol() const { return symbol_; }
 
 private:
@@ -74,6 +75,10 @@ private:
     void on_cancel(const Command& cmd, std::vector<Event>& out);
     void on_replace(const Command& cmd, std::vector<Event>& out);
     void on_snapshot(const Command& cmd, std::vector<Event>& out);
+    void on_clock(std::uint64_t ts, std::vector<Event>& out);
+    void halt(std::uint64_t until, std::vector<Event>& out);
+    void resume(std::vector<Event>& out);
+    bool trips_breaker(Price p) const;
 
     void execute(const Incoming& in, std::vector<Event>& out);
     bool fok_fillable(const Incoming& in) const;
@@ -109,7 +114,14 @@ private:
 
     Price best_bid_ = 0;
     Price best_ask_ = 0;
-    Price ref_price_;
+    Price ref_price_;  // last trade
+
+    // Circuit breaker state. Time only comes from command timestamps.
+    std::uint64_t now_ = 0;
+    bool halted_ = false;
+    std::uint64_t halt_until_ = 0;
+    Price anchor_price_;
+    std::uint64_t anchor_ts_ = 0;
 
     Pool<Order> pool_;
     OrderMap<Order> by_id_;
