@@ -32,7 +32,7 @@ public:
         std::size_t n = 0;
         for (auto& [p, q] : bids_) n += q.size();
         for (auto& [p, q] : asks_) n += q.size();
-        return n;
+        return n + stops_.size();
     }
 
 private:
@@ -46,6 +46,13 @@ private:
         Side side;
     };
     using Queue = std::list<Order>;
+
+    struct Stop {
+        Order o;
+        Price stop;
+        OrdType type;
+        TIF tif;
+    };
 
     std::map<Price, Queue>& side_map(Side s) { return s == Side::Buy ? bids_ : asks_; }
 
@@ -100,16 +107,19 @@ private:
     }
 
     void on_new(const Command& c, std::vector<Event>& out) {
-        if (std::uint8_t(c.side) > 1 || std::uint8_t(c.ord_type) > 1 || std::uint8_t(c.tif) > 2)
+        if (std::uint8_t(c.side) > 1 || std::uint8_t(c.ord_type) > 3 || std::uint8_t(c.tif) > 2)
             return reject(c, RejectReason::InvalidField, out);
         if (c.qty == 0) return reject(c, RejectReason::InvalidQty, out);
         if (c.qty > cfg_.max_order_qty) return reject(c, RejectReason::MaxQtyExceeded, out);
-        Price limit = c.price;
-        if (c.ord_type == OrdType::Limit) {
+        bool is_stop = c.ord_type == OrdType::Stop || c.ord_type == OrdType::StopLimit;
+        bool has_limit = c.ord_type == OrdType::Limit || c.ord_type == OrdType::StopLimit;
+        if (has_limit) {
             if (auto r = check_price(c.price); r != RejectReason::None) return reject(c, r, out);
-        } else {
-            Price band = ref_ * Price(cfg_.band_bps) / 10'000;
-            limit = c.side == Side::Buy ? std::min(cfg_.max_price - 1, ref_ + band) : std::max<Price>(1, ref_ - band);
+        }
+        if (is_stop) {
+            if (c.stop_price < 1 || c.stop_price >= cfg_.max_price) return reject(c, RejectReason::InvalidPrice, out);
+            if (c.side == Side::Buy ? c.stop_price <= ref_ : c.stop_price >= ref_)
+                return reject(c, RejectReason::StopPriceCrossed, out);
         }
         OrderId id = (OrderId(symbol_) + 1) << 40 | seq_++;
 
@@ -121,13 +131,73 @@ private:
         ack.account = c.account;
         ack.order_id = id;
         ack.cl_ord_id = c.cl_ord_id;
-        ack.price = c.ord_type == OrdType::Limit ? c.price : 0;
+        ack.price = has_limit ? c.price : 0;
         ack.qty = c.qty;
         ack.leaves = c.qty;
         out.push_back(ack);
 
-        Order o{id, c.cl_ord_id, limit, c.qty, c.account, c.session, c.side};
+        Order o{id, c.cl_ord_id, has_limit ? c.price : market_limit(c.side), c.qty, c.account, c.session, c.side};
+        if (is_stop) {
+            if (order_count() >= cfg_.max_orders) {
+                Event e{};
+                e.type = EventType::Cancelled;
+                e.side = c.side;
+                e.reason = std::uint8_t(CancelReason::BookFull);
+                e.symbol = symbol_;
+                e.session = c.session;
+                e.account = c.account;
+                e.order_id = id;
+                e.cl_ord_id = c.cl_ord_id;
+                e.price = c.price;
+                e.qty = c.qty;
+                out.push_back(e);
+                return;
+            }
+            o.price = c.price;
+            stops_.push_back({o, c.stop_price, c.ord_type, c.tif});
+            return;
+        }
         execute(o, c.ord_type == OrdType::Limit && c.tif == TIF::GTC, c.tif == TIF::FOK, out);
+        run_stops(out);
+    }
+
+    Price market_limit(Side side) const {
+        Price band = ref_ * Price(cfg_.band_bps) / 10'000;
+        return side == Side::Buy ? std::min(cfg_.max_price - 1, ref_ + band) : std::max<Price>(1, ref_ - band);
+    }
+
+    void run_stops(std::vector<Event>& out) {
+        for (;;) {
+            // Lowest triggered buy stop first, then highest triggered sell stop; ties by arrival.
+            auto pick = stops_.end();
+            for (auto it = stops_.begin(); it != stops_.end(); ++it)
+                if (it->o.side == Side::Buy && it->stop <= ref_ && (pick == stops_.end() || it->stop < pick->stop))
+                    pick = it;
+            if (pick == stops_.end())
+                for (auto it = stops_.begin(); it != stops_.end(); ++it)
+                    if (it->o.side == Side::Sell && it->stop >= ref_ && (pick == stops_.end() || it->stop > pick->stop))
+                        pick = it;
+            if (pick == stops_.end()) return;
+
+            Stop st = *pick;
+            stops_.erase(pick);
+            Event e{};
+            e.type = EventType::Triggered;
+            e.side = st.o.side;
+            e.symbol = symbol_;
+            e.session = st.o.session;
+            e.account = st.o.account;
+            e.order_id = st.o.id;
+            e.cl_ord_id = st.o.cl;
+            e.price = st.stop;
+            e.qty = st.o.qty;
+            e.leaves = st.o.qty;
+            out.push_back(e);
+
+            bool limit = st.type == OrdType::StopLimit;
+            if (!limit) st.o.price = market_limit(st.o.side);
+            execute(st.o, limit && st.tif == TIF::GTC, st.tif == TIF::FOK, out);
+        }
     }
 
     void execute(Order in, bool can_rest, bool fok, std::vector<Event>& out) {
@@ -247,7 +317,28 @@ private:
         if (m[p].empty()) m.erase(p);
     }
 
+    std::list<Stop>::iterator find_stop(OrderId id) {
+        return std::find_if(stops_.begin(), stops_.end(), [&](const Stop& s) { return s.o.id == id; });
+    }
+
     void on_cancel(const Command& c, std::vector<Event>& out) {
+        if (auto st = find_stop(c.order_id); st != stops_.end()) {
+            if (st->o.account != c.account) return reject(c, RejectReason::NotOwner, out);
+            Event e{};
+            e.type = EventType::Cancelled;
+            e.side = st->o.side;
+            e.reason = std::uint8_t(CancelReason::User);
+            e.symbol = symbol_;
+            e.session = st->o.session;
+            e.account = st->o.account;
+            e.order_id = st->o.id;
+            e.cl_ord_id = st->o.cl;
+            e.price = st->o.price;
+            e.qty = st->o.qty;
+            out.push_back(e);
+            stops_.erase(st);
+            return;
+        }
         Side s;
         Price p;
         Queue::iterator it;
@@ -273,6 +364,10 @@ private:
         if (c.qty == 0) return reject(c, RejectReason::InvalidQty, out);
         if (c.qty > cfg_.max_order_qty) return reject(c, RejectReason::MaxQtyExceeded, out);
         if (auto r = check_price(c.price); r != RejectReason::None) return reject(c, r, out);
+        if (auto st = find_stop(c.order_id); st != stops_.end()) {
+            if (st->o.account != c.account) return reject(c, RejectReason::NotOwner, out);
+            return reject(c, RejectReason::InvalidField, out);
+        }
         Side s;
         Price p;
         Queue::iterator it;
@@ -306,6 +401,7 @@ private:
         out.push_back(e);
         delta(s, p, out);
         execute(moved, true, false, out);
+        run_stops(out);
     }
 
     void on_snapshot(const Command& c, std::vector<Event>& out) {
@@ -338,6 +434,7 @@ private:
     Price ref_;
     std::map<Price, Queue> bids_;
     std::map<Price, Queue> asks_;
+    std::list<Stop> stops_;  // arrival order
     std::uint64_t seq_ = 1;
     std::uint64_t trade_seq_ = 1;
 };

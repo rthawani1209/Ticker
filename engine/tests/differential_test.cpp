@@ -56,20 +56,27 @@ public:
             // Garbage the book has to reject cleanly.
             c.type = CmdType::New;
             c.side = Side(rng_() % 3);
-            c.ord_type = OrdType(rng_() % 3);
+            c.ord_type = OrdType(rng_() % 5);
+            c.stop_price = Price(rng_() % 300);
             c.tif = TIF(rng_() % 4);
             c.price = Price(rng_() % (cfg_.max_price + 10)) - 5;
             c.qty = rng_() % 3 == 0 ? 0 : Qty(rng_() % (cfg_.max_order_qty * 2));
         } else {
             c.type = CmdType::New;
             c.side = rng_() % 2 ? Side::Buy : Side::Sell;
-            c.ord_type = rng_() % 12 == 0 ? OrdType::Market : OrdType::Limit;
+            int k = int(rng_() % 12);
+            c.ord_type = k == 0 ? OrdType::Market : k == 1 ? OrdType::Stop : k == 2 ? OrdType::StopLimit : OrdType::Limit;
             int t = int(rng_() % 10);
             c.tif = t < 7 ? TIF::GTC : t < 9 ? TIF::IOC : TIF::FOK;
             // Mostly near the mid, sometimes far away to hit the band.
             Price spread = rng_() % 20 == 0 ? 400 : 12;
             c.price = mid_ + Price(rng_() % (2 * spread + 1)) - spread;
             c.qty = Qty(1 + rng_() % (rng_() % 8 == 0 ? 400 : 40));
+            if (c.ord_type == OrdType::Stop || c.ord_type == OrdType::StopLimit) {
+                // Usually on the correct side of the market, sometimes already crossed.
+                Price off = Price(rng_() % 15) - 2;
+                c.stop_price = c.side == Side::Buy ? mid_ + off : mid_ - off;
+            }
         }
         return c;
     }

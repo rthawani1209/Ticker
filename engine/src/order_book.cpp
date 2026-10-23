@@ -12,6 +12,10 @@ OrderBook::OrderBook(SymbolId symbol, const SymbolConfig& cfg)
       asks_(std::size_t(cfg.max_price)),
       bid_tree_(std::size_t(cfg.max_price)),
       ask_tree_(std::size_t(cfg.max_price)),
+      buy_stops_(std::size_t(cfg.max_price)),
+      sell_stops_(std::size_t(cfg.max_price)),
+      buy_stop_tree_(std::size_t(cfg.max_price)),
+      sell_stop_tree_(std::size_t(cfg.max_price)),
       ref_price_(cfg.ref_price),
       pool_(cfg.max_orders),
       by_id_(cfg.max_orders) {
@@ -55,20 +59,20 @@ void OrderBook::reject(const Command& cmd, RejectReason why, std::vector<Event>&
 }
 
 void OrderBook::on_new(const Command& cmd, std::vector<Event>& out) {
-    if (std::uint8_t(cmd.side) > 1 || std::uint8_t(cmd.ord_type) > 1 || std::uint8_t(cmd.tif) > 2)
+    if (std::uint8_t(cmd.side) > 1 || std::uint8_t(cmd.ord_type) > 3 || std::uint8_t(cmd.tif) > 2)
         return reject(cmd, RejectReason::InvalidField, out);
     if (cmd.qty == 0) return reject(cmd, RejectReason::InvalidQty, out);
     if (cmd.qty > cfg_.max_order_qty) return reject(cmd, RejectReason::MaxQtyExceeded, out);
 
-    Price limit;
-    if (cmd.ord_type == OrdType::Limit) {
+    const bool is_stop = cmd.ord_type == OrdType::Stop || cmd.ord_type == OrdType::StopLimit;
+    const bool has_limit = cmd.ord_type == OrdType::Limit || cmd.ord_type == OrdType::StopLimit;
+    if (has_limit) {
         if (auto r = check_price(cmd.price); r != RejectReason::None) return reject(cmd, r, out);
-        limit = cmd.price;
-    } else {
-        // Market orders are protected: they only sweep as far as the price band.
-        Price band = ref_price_ * Price(cfg_.band_bps) / 10'000;
-        limit = cmd.side == Side::Buy ? std::min(cfg_.max_price - 1, ref_price_ + band)
-                                      : std::max<Price>(1, ref_price_ - band);
+    }
+    if (is_stop) {
+        if (cmd.stop_price < 1 || cmd.stop_price >= cfg_.max_price) return reject(cmd, RejectReason::InvalidPrice, out);
+        bool crossed = cmd.side == Side::Buy ? cmd.stop_price <= ref_price_ : cmd.stop_price >= ref_price_;
+        if (crossed) return reject(cmd, RejectReason::StopPriceCrossed, out);
     }
 
     OrderId id = (OrderId(symbol_) + 1) << 40 | next_seq_++;
@@ -81,16 +85,89 @@ void OrderBook::on_new(const Command& cmd, std::vector<Event>& out) {
     ack.account = cmd.account;
     ack.order_id = id;
     ack.cl_ord_id = cmd.cl_ord_id;
-    ack.price = cmd.ord_type == OrdType::Limit ? cmd.price : 0;
+    ack.price = has_limit ? cmd.price : 0;
     ack.qty = cmd.qty;
     ack.leaves = cmd.qty;
     out.push_back(ack);
 
+    if (is_stop) return add_stop(cmd, id, out);
+
     Incoming in{id,       cmd.cl_ord_id, cmd.session, cmd.account,
-                cmd.side, limit,         cmd.qty,
+                cmd.side, has_limit ? cmd.price : market_limit(cmd.side), cmd.qty,
                 cmd.ord_type == OrdType::Limit && cmd.tif == TIF::GTC,
                 cmd.tif == TIF::FOK};
     execute(in, out);
+    run_stops(out);
+}
+
+// Market orders are protected: they only sweep as far as the price band.
+Price OrderBook::market_limit(Side side) const {
+    Price band = ref_price_ * Price(cfg_.band_bps) / 10'000;
+    return side == Side::Buy ? std::min(cfg_.max_price - 1, ref_price_ + band) : std::max<Price>(1, ref_price_ - band);
+}
+
+void OrderBook::add_stop(const Command& cmd, OrderId id, std::vector<Event>& out) {
+    Order* o = pool_.acquire();
+    if (!o) {
+        Event e{};
+        e.type = EventType::Cancelled;
+        e.side = cmd.side;
+        e.reason = std::uint8_t(CancelReason::BookFull);
+        e.symbol = symbol_;
+        e.session = cmd.session;
+        e.account = cmd.account;
+        e.order_id = id;
+        e.cl_ord_id = cmd.cl_ord_id;
+        e.price = cmd.price;
+        e.qty = cmd.qty;
+        out.push_back(e);
+        return;
+    }
+    *o = Order{id,         cmd.cl_ord_id, cmd.price, cmd.stop_price, cmd.qty, cmd.account, cmd.session,
+               cmd.side,   cmd.ord_type,  cmd.tif,   true,           nullptr, nullptr};
+    link_stop(o);
+    by_id_.insert(id, o);
+}
+
+// Triggers every stop the last trade has reached. Triggered orders can trade and
+// move the price further, which can trigger more stops, so this loops until quiet.
+void OrderBook::run_stops(std::vector<Event>& out) {
+    for (;;) {
+        Order* o = nullptr;
+        if (!buy_stop_tree_.empty()) {
+            Price p = buy_stop_tree_.find_next(0);
+            if (p <= ref_price_) o = buy_stops_[p].head;
+        }
+        if (!o && !sell_stop_tree_.empty()) {
+            Price p = sell_stop_tree_.find_prev(std::size_t(cfg_.max_price - 1));
+            if (p >= ref_price_) o = sell_stops_[p].head;
+        }
+        if (!o) return;
+
+        unlink_stop(o);
+        by_id_.erase(o->id);
+
+        Event e{};
+        e.type = EventType::Triggered;
+        e.side = o->side;
+        e.symbol = symbol_;
+        e.session = o->session;
+        e.account = o->account;
+        e.order_id = o->id;
+        e.cl_ord_id = o->cl_ord_id;
+        e.price = o->stop_price;
+        e.qty = o->qty;
+        e.leaves = o->qty;
+        out.push_back(e);
+
+        const bool limit = o->type == OrdType::StopLimit;
+        Incoming in{o->id,   o->cl_ord_id, o->session, o->account,
+                    o->side, limit ? o->price : market_limit(o->side), o->qty,
+                    limit && o->tif == TIF::GTC,
+                    o->tif == TIF::FOK};
+        pool_.release(o);
+        execute(in, out);
+    }
 }
 
 bool OrderBook::fok_fillable(const Incoming& in) const {
@@ -204,7 +281,8 @@ void OrderBook::execute(const Incoming& in, std::vector<Event>& out) {
 
     Order* o = pool_.acquire();
     if (!o) return cancelled(CancelReason::BookFull, remaining);
-    *o = Order{in.id, in.cl_ord_id, in.limit, remaining, in.account, in.session, in.side, nullptr, nullptr};
+    *o = Order{in.id,   in.cl_ord_id,   in.limit, 0,     remaining, in.account, in.session,
+               in.side, OrdType::Limit, TIF::GTC, false, nullptr,   nullptr};
     link(o);
     by_id_.insert(o->id, o);
     emit_delta(in.side, in.limit, out);
@@ -228,6 +306,12 @@ void OrderBook::on_cancel(const Command& cmd, std::vector<Event>& out) {
     e.qty = o->qty;
     out.push_back(e);
 
+    if (o->waiting) {
+        unlink_stop(o);
+        by_id_.erase(o->id);
+        pool_.release(o);
+        return;
+    }
     const Side side = o->side;
     const Price price = o->price;
     unlink(o);
@@ -243,6 +327,8 @@ void OrderBook::on_replace(const Command& cmd, std::vector<Event>& out) {
     Order* o = by_id_.find(cmd.order_id);
     if (!o) return reject(cmd, RejectReason::UnknownOrder, out);
     if (o->account != cmd.account) return reject(cmd, RejectReason::NotOwner, out);
+    // Waiting stops can't be amended; cancel and send a new one.
+    if (o->waiting) return reject(cmd, RejectReason::InvalidField, out);
 
     Event e{};
     e.type = EventType::Replaced;
@@ -275,6 +361,7 @@ void OrderBook::on_replace(const Command& cmd, std::vector<Event>& out) {
     out.push_back(e);
     emit_delta(in.side, old_price, out);
     execute(in, out);
+    run_stops(out);
 }
 
 void OrderBook::on_snapshot(const Command& cmd, std::vector<Event>& out) {
@@ -344,6 +431,28 @@ void OrderBook::unlink(Order* o) {
         std::int64_t p = t.find_next(std::size_t(o->price));
         best_ask_ = p < 0 ? 0 : p;
     }
+}
+
+void OrderBook::link_stop(Order* o) {
+    const bool buy = o->side == Side::Buy;
+    Level& l = (buy ? buy_stops_ : sell_stops_)[o->stop_price];
+    o->prev = l.tail;
+    o->next = nullptr;
+    if (l.tail)
+        l.tail->next = o;
+    else {
+        l.head = o;
+        (buy ? buy_stop_tree_ : sell_stop_tree_).set(std::size_t(o->stop_price));
+    }
+    l.tail = o;
+}
+
+void OrderBook::unlink_stop(Order* o) {
+    const bool buy = o->side == Side::Buy;
+    Level& l = (buy ? buy_stops_ : sell_stops_)[o->stop_price];
+    (o->prev ? o->prev->next : l.head) = o->next;
+    (o->next ? o->next->prev : l.tail) = o->prev;
+    if (!l.head) (buy ? buy_stop_tree_ : sell_stop_tree_).clear(std::size_t(o->stop_price));
 }
 
 void OrderBook::emit_delta(Side side, Price price, std::vector<Event>& out) const {

@@ -14,6 +14,8 @@ std::string_view to_string(EventType t) {
         case EventType::BookDelta: return "BookDelta";
         case EventType::SnapshotLevel: return "SnapshotLevel";
         case EventType::SnapshotEnd: return "SnapshotEnd";
+        case EventType::Triggered: return "Triggered";
+        case EventType::TradingStatus: return "TradingStatus";
     }
     return "?";
 }
@@ -29,6 +31,8 @@ std::string_view to_string(RejectReason r) {
         case RejectReason::UnknownOrder: return "UnknownOrder";
         case RejectReason::NotOwner: return "NotOwner";
         case RejectReason::InvalidField: return "InvalidField";
+        case RejectReason::Halted: return "Halted";
+        case RejectReason::StopPriceCrossed: return "StopPriceCrossed";
     }
     return "?";
 }
@@ -40,6 +44,7 @@ std::string_view to_string(CancelReason r) {
         case CancelReason::FokUnfillable: return "FokUnfillable";
         case CancelReason::SelfTrade: return "SelfTrade";
         case CancelReason::BookFull: return "BookFull";
+        case CancelReason::Halted: return "Halted";
     }
     return "?";
 }

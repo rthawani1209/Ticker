@@ -294,3 +294,76 @@ TEST_F(BookTest, OrderIdsAreUniqueAcrossSymbols) {
     OrderId here = place(Side::Buy, 1000, 1);
     EXPECT_NE(here, o2[0].order_id);
 }
+
+namespace {
+
+Command stop(Side side, Price stop_price, Qty qty, AccountId account = 1, Price limit_price = 0) {
+    Command c = limit(side, limit_price, qty, account);
+    c.ord_type = limit_price ? OrdType::StopLimit : OrdType::Stop;
+    c.stop_price = stop_price;
+    return c;
+}
+
+}  // namespace
+
+TEST_F(BookTest, StopWaitsOffTheBook) {
+    auto evs = send(stop(Side::Buy, 1010, 5));
+    ASSERT_EQ(evs.size(), 1u);
+    EXPECT_EQ(evs[0].type, EventType::Ack);
+    EXPECT_EQ(book.best_bid(), 0);
+    EXPECT_EQ(book.order_count(), 1u);
+}
+
+TEST_F(BookTest, StopRejectedIfAlreadyCrossed) {
+    // Last price is the reference, 1000.
+    EXPECT_EQ(send(stop(Side::Buy, 1000, 5)).at(0).reason, std::uint8_t(RejectReason::StopPriceCrossed));
+    EXPECT_EQ(send(stop(Side::Sell, 1001, 5)).at(0).reason, std::uint8_t(RejectReason::StopPriceCrossed));
+    EXPECT_EQ(send(stop(Side::Sell, 999, 5)).at(0).type, EventType::Ack);
+}
+
+TEST_F(BookTest, BuyStopTriggersWhenPriceRises) {
+    OrderId s = send(stop(Side::Buy, 1005, 4, 3)).at(0).order_id;
+    place(Side::Sell, 1005, 1, 1);
+    place(Side::Sell, 1010, 10, 1);
+    auto evs = send(limit(Side::Buy, 1005, 1, 2));  // trades at 1005, fires the stop
+    auto trig = of_type(evs, EventType::Triggered);
+    ASSERT_EQ(trig.size(), 1u);
+    EXPECT_EQ(trig[0].order_id, s);
+    auto fills = of_type(evs, EventType::Fill);
+    ASSERT_EQ(fills.size(), 4u);
+    EXPECT_EQ(fills[2].order_id, s);
+    EXPECT_EQ(fills[2].price, 1010);
+    EXPECT_EQ(fills[2].qty, 4u);
+    EXPECT_EQ(book.order_count(), 1u);
+}
+
+TEST_F(BookTest, StopLimitRestsAfterTrigger) {
+    OrderId s = send(stop(Side::Sell, 995, 6, 3, 994)).at(0).order_id;
+    place(Side::Buy, 995, 1, 1);
+    auto evs = send(limit(Side::Sell, 995, 1, 2));
+    EXPECT_EQ(of_type(evs, EventType::Triggered).at(0).order_id, s);
+    EXPECT_EQ(book.best_ask(), 994);
+    EXPECT_EQ(book.depth_at(Side::Sell, 994), 6u);
+}
+
+TEST_F(BookTest, StopsCascade) {
+    // Each triggered sell stop trades lower and fires the next one.
+    send(stop(Side::Sell, 999, 1, 5));
+    send(stop(Side::Sell, 997, 1, 6));
+    place(Side::Buy, 999, 1, 1);
+    place(Side::Buy, 997, 1, 1);
+    place(Side::Buy, 995, 1, 1);
+    auto evs = send(limit(Side::Sell, 999, 1, 2));
+    EXPECT_EQ(of_type(evs, EventType::Triggered).size(), 2u);
+    EXPECT_EQ(of_type(evs, EventType::Trade).size(), 3u);
+    EXPECT_EQ(book.reference_price(), 995);
+}
+
+TEST_F(BookTest, CancelWaitingStop) {
+    OrderId s = send(stop(Side::Buy, 1010, 5)).at(0).order_id;
+    auto evs = send(cancel(s));
+    ASSERT_EQ(evs.size(), 1u);
+    EXPECT_EQ(evs[0].type, EventType::Cancelled);
+    EXPECT_EQ(book.order_count(), 0u);
+    EXPECT_EQ(send(replace(send(stop(Side::Buy, 1010, 5)).at(0).order_id, 1000, 5)).at(0).type, EventType::Reject);
+}

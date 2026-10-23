@@ -15,7 +15,9 @@ using SymbolId = std::uint32_t;
 using SessionId = std::uint32_t;
 
 enum class Side : std::uint8_t { Buy = 0, Sell = 1 };
-enum class OrdType : std::uint8_t { Limit = 0, Market = 1 };
+// Stop orders wait off the book until the last trade reaches their stop price,
+// then enter as a market (Stop) or limit (StopLimit) order.
+enum class OrdType : std::uint8_t { Limit = 0, Market = 1, Stop = 2, StopLimit = 3 };
 enum class TIF : std::uint8_t { GTC = 0, IOC = 1, FOK = 2 };
 
 constexpr Side opposite(Side s) { return s == Side::Buy ? Side::Sell : Side::Buy; }
@@ -30,6 +32,8 @@ enum class RejectReason : std::uint8_t {
     UnknownOrder,
     NotOwner,
     InvalidField,
+    Halted,
+    StopPriceCrossed,  // the stop would trigger immediately
 };
 
 enum class CancelReason : std::uint8_t {
@@ -38,11 +42,12 @@ enum class CancelReason : std::uint8_t {
     FokUnfillable,
     SelfTrade,
     BookFull,
+    Halted,  // circuit breaker tripped while this order was matching
 };
 
 // ---- Input -------------------------------------------------------------------------
 
-enum class CmdType : std::uint8_t { New = 0, Cancel = 1, Replace = 2, Snapshot = 3 };
+enum class CmdType : std::uint8_t { New = 0, Cancel = 1, Replace = 2, Snapshot = 3, Halt = 4, Resume = 5 };
 
 struct Command {
     CmdType type{};
@@ -55,12 +60,16 @@ struct Command {
     std::uint64_t cl_ord_id{};
     OrderId order_id{};  // target of Cancel/Replace
     Price price{};
+    Price stop_price{};
     Qty qty{};
     std::uint32_t pad{};
+    // Set by the gateway when the command arrives. The engine never reads a clock,
+    // so replaying a journal gives the same result.
+    std::uint64_t ts{};
 
     friend bool operator==(const Command&, const Command&) = default;
 };
-static_assert(sizeof(Command) == 48);
+static_assert(sizeof(Command) == 64);
 
 // ---- Output ------------------------------------------------------------------------
 
@@ -74,6 +83,8 @@ enum class EventType : std::uint8_t {
     BookDelta,  // public: level at `price` now has `level_qty` resting
     SnapshotLevel,
     SnapshotEnd,
+    Triggered,      // a stop order reached its stop price and is now live
+    TradingStatus,  // public: reason 1 = halted, 0 = open; level_qty = resume time (ns) if known
 };
 
 struct Event {

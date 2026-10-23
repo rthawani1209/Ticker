@@ -39,11 +39,15 @@ private:
     struct Order {
         OrderId id;
         std::uint64_t cl_ord_id;
-        Price price;
-        Qty qty;  // open quantity
+        Price price;  // limit price; unused for plain stops
+        Price stop_price;
+        Qty qty;      // open quantity
         AccountId account;
         SessionId session;
         Side side;
+        OrdType type;
+        TIF tif;
+        bool waiting;  // a stop that hasn't triggered yet
         Order* prev;
         Order* next;
     };
@@ -73,9 +77,14 @@ private:
 
     void execute(const Incoming& in, std::vector<Event>& out);
     bool fok_fillable(const Incoming& in) const;
+    void add_stop(const Command& cmd, OrderId id, std::vector<Event>& out);
+    void run_stops(std::vector<Event>& out);
+    Price market_limit(Side side) const;
 
     void link(Order* o);
     void unlink(Order* o);
+    void link_stop(Order* o);
+    void unlink_stop(Order* o);
     void emit_delta(Side side, Price price, std::vector<Event>& out) const;
 
     RejectReason check_price(Price price) const;
@@ -91,6 +100,13 @@ private:
     std::vector<Level> asks_;
     BitTree bid_tree_;
     BitTree ask_tree_;
+    // Waiting stops, by stop price. Buy stops trigger from the lowest stop up,
+    // sell stops from the highest down.
+    std::vector<Level> buy_stops_;
+    std::vector<Level> sell_stops_;
+    BitTree buy_stop_tree_;
+    BitTree sell_stop_tree_;
+
     Price best_bid_ = 0;
     Price best_ask_ = 0;
     Price ref_price_;
