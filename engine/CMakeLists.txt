@@ -64,10 +64,11 @@ if(TICKER_BUILD_TESTS)
   include(GoogleTest)
   gtest_discover_tests(engine_tests DISCOVERY_TIMEOUT 60)
 
-  add_executable(alloc_test tests/alloc_test.cpp)
-  target_link_libraries(alloc_test PRIVATE ticker_core GTest::gtest_main)
-  # Sanitizers replace operator new themselves, so this check only runs in normal builds.
+  # Sanitizers replace operator new themselves (TSan's even clashes at link time),
+  # so this check only exists in normal builds.
   if(NOT TICKER_SANITIZE)
+    add_executable(alloc_test tests/alloc_test.cpp)
+    target_link_libraries(alloc_test PRIVATE ticker_core GTest::gtest_main)
     gtest_discover_tests(alloc_test)
   endif()
 endif()
