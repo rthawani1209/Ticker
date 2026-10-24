@@ -20,6 +20,9 @@ jobs:
           - compiler: clang++
             build_type: Debug
             sanitize: address,undefined
+          - compiler: clang++
+            build_type: RelWithDebInfo
+            sanitize: thread
     steps:
       - uses: actions/checkout@v4
       - name: Configure

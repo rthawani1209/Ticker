@@ -20,6 +20,8 @@ if(TICKER_SANITIZE)
   add_link_options(-fsanitize=${TICKER_SANITIZE})
 endif()
 
+find_package(Threads REQUIRED)
+
 add_library(ticker_core
   src/engine.cpp
   src/order_book.cpp
@@ -41,8 +43,9 @@ if(TICKER_BUILD_TESTS)
     tests/containers_test.cpp
     tests/differential_test.cpp
     tests/order_book_test.cpp
+    tests/spsc_ring_test.cpp
   )
-  target_link_libraries(engine_tests PRIVATE ticker_core GTest::gtest_main)
+  target_link_libraries(engine_tests PRIVATE ticker_core GTest::gtest_main Threads::Threads)
   include(GoogleTest)
   gtest_discover_tests(engine_tests DISCOVERY_TIMEOUT 60)
 

@@ -18,8 +18,12 @@ void* operator new(std::size_t n) {
     if (void* p = std::malloc(n ? n : 1)) return p;
     throw std::bad_alloc();
 }
+// gcc can't tell these pair with the operator new above and warns about a mismatch.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmismatched-new-delete"
 void operator delete(void* p) noexcept { std::free(p); }
 void operator delete(void* p, std::size_t) noexcept { std::free(p); }
+#pragma GCC diagnostic pop
 
 using namespace ticker;
 
