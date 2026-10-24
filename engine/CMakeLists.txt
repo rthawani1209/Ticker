@@ -26,6 +26,7 @@ add_library(ticker_core
   src/engine.cpp
   src/journal.cpp
   src/order_book.cpp
+  src/protocol.cpp
   src/types.cpp
 )
 target_include_directories(ticker_core PUBLIC include)
@@ -48,6 +49,7 @@ if(TICKER_BUILD_TESTS)
     tests/differential_test.cpp
     tests/journal_test.cpp
     tests/order_book_test.cpp
+    tests/protocol_test.cpp
     tests/spsc_ring_test.cpp
   )
   target_link_libraries(engine_tests PRIVATE ticker_core GTest::gtest_main Threads::Threads)
