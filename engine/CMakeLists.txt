@@ -34,6 +34,13 @@ target_include_directories(ticker_core PUBLIC include)
 add_executable(ticker-replay tools/replay.cpp)
 target_link_libraries(ticker-replay PRIVATE ticker_core)
 
+add_library(ticker_server src/server/server.cpp)
+target_include_directories(ticker_server PUBLIC src/server)
+target_link_libraries(ticker_server PUBLIC ticker_core Threads::Threads)
+
+add_executable(ticker-engine src/server/main.cpp)
+target_link_libraries(ticker-engine PRIVATE ticker_server)
+
 if(TICKER_BUILD_TESTS)
   include(FetchContent)
   FetchContent_Declare(googletest
@@ -50,9 +57,10 @@ if(TICKER_BUILD_TESTS)
     tests/journal_test.cpp
     tests/order_book_test.cpp
     tests/protocol_test.cpp
+    tests/server_test.cpp
     tests/spsc_ring_test.cpp
   )
-  target_link_libraries(engine_tests PRIVATE ticker_core GTest::gtest_main Threads::Threads)
+  target_link_libraries(engine_tests PRIVATE ticker_server GTest::gtest_main)
   include(GoogleTest)
   gtest_discover_tests(engine_tests DISCOVERY_TIMEOUT 60)
 

@@ -14,7 +14,7 @@ Students get fake money and trade against each other and against bots on a real 
 Ticker/
 ├── engine/        C++20 matching engine (the exchange): order book, matching, risk checks
 │   ├── include/   public headers
-│   ├── src/       implementation
+│   ├── src/       implementation (src/server/ is the TCP server)
 │   ├── tests/     unit tests and the differential fuzz test
 │   └── bench/     benchmarks and the latency tool
 ├── backend/       Node.js API: logins, orders, leagues, cash and positions (coming)
@@ -35,6 +35,8 @@ The exchange core is in [`engine/`](engine). It is a C++20 limit order book with
 - trading halts and a circuit breaker that pauses a stock moving too far too fast
 - O(1) cancel via an open-addressing id map, O(1) best-price lookup via a 3-level bitmap
 - no heap allocation while matching (orders come from a pre-allocated pool)
+- a TCP server (`ticker-engine`) with a compact binary protocol, one matching thread per shard fed by lock-free queues
+- a write-ahead journal: every order is on disk before it is acknowledged, and a restart replays it to rebuild the books
 
 Every change is checked against a small, obviously-correct reference book: the tests feed both the same random order flow and require identical output.
 
@@ -45,5 +47,7 @@ ctest --test-dir engine/build --output-on-failure
 ```
 
 Matching takes about 125 ns at the median and 1.5 µs at p99 on a 4-core cloud VM; see [docs/benchmarks.md](docs/benchmarks.md).
+
+Start the server with `engine/build/ticker-engine --port 9100 --journal-dir data/`. The protocol is described in [docs/protocol.md](docs/protocol.md).
 
 Run the differential test longer with `TICKER_FUZZ_COMMANDS=1000000 engine/build/engine_tests --gtest_filter='Differential*'`.
