@@ -24,10 +24,14 @@ find_package(Threads REQUIRED)
 
 add_library(ticker_core
   src/engine.cpp
+  src/journal.cpp
   src/order_book.cpp
   src/types.cpp
 )
 target_include_directories(ticker_core PUBLIC include)
+
+add_executable(ticker-replay tools/replay.cpp)
+target_link_libraries(ticker-replay PRIVATE ticker_core)
 
 if(TICKER_BUILD_TESTS)
   include(FetchContent)
@@ -42,6 +46,7 @@ if(TICKER_BUILD_TESTS)
   add_executable(engine_tests
     tests/containers_test.cpp
     tests/differential_test.cpp
+    tests/journal_test.cpp
     tests/order_book_test.cpp
     tests/spsc_ring_test.cpp
   )
