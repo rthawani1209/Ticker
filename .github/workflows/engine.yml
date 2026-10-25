@@ -9,6 +9,7 @@ jobs:
   test:
     name: ${{ matrix.compiler }} ${{ matrix.sanitize || 'release' }}
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -36,11 +37,12 @@ jobs:
       - name: Test
         env:
           UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
-        run: ctest --test-dir engine/build --output-on-failure -j
+        run: ctest --test-dir engine/build --output-on-failure -j --timeout 120
 
   fuzz:
     name: differential fuzz (long)
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - run: cmake -S engine -B engine/build -DCMAKE_BUILD_TYPE=Release
@@ -53,6 +55,7 @@ jobs:
   bench:
     name: benchmarks
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - run: cmake -S engine -B engine/build -DCMAKE_BUILD_TYPE=Release -DTICKER_BUILD_TESTS=OFF

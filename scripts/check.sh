@@ -12,8 +12,11 @@ run() {
   cmake -S engine -B "$dir" -DCMAKE_CXX_COMPILER="$cxx" -DCMAKE_BUILD_TYPE="$type" \
     -DTICKER_SANITIZE="$san" > /dev/null
   cmake --build "$dir" -j > /dev/null
-  UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 \
-    ctest --test-dir "$dir" --output-on-failure -j > /dev/null
+  if ! UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 \
+    ctest --test-dir "$dir" --output-on-failure -j --timeout 120 > "$dir/ctest.log" 2>&1; then
+    tail -50 "$dir/ctest.log"
+    exit 1
+  fi
 }
 
 run g++ RelWithDebInfo

@@ -41,6 +41,7 @@ public:
         ::setsockopt(fd_, IPPROTO_TCP, TCP_NODELAY, &one, sizeof one);
         timeval tv{timeout_ms / 1000, (timeout_ms % 1000) * 1000};
         ::setsockopt(fd_, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof tv);
+        ::setsockopt(fd_, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof tv);  // a stuck server fails the test, not hangs it
     }
     ~TestClient() { ::close(fd_); }
 
