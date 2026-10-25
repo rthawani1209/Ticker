@@ -1,0 +1,10 @@
+name = "calm"
+description = "An ordinary day: steady two-sided markets and the occasional headline."
+vol_bps_per_min = 25
+news_per_minute = 0.5
+
+[bots]
+market_makers_per_symbol = 2
+momentum = 4
+noise = 12
+news_traders = 4

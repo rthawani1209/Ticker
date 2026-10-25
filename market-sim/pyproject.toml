@@ -1,0 +1,16 @@
+[project]
+name = "ticker-sim"
+version = "0.1.0"
+description = "Trading bots, news engine and scenario cases for the Ticker exchange"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+ticker-sim = "ticker_sim.__main__:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

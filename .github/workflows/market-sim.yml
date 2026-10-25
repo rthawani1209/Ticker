@@ -1,0 +1,25 @@
+name: market-sim
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: pytest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build the engine for the integration tests
+        run: |
+          cmake -S engine -B engine/build -DCMAKE_BUILD_TYPE=Release -DTICKER_BUILD_TESTS=OFF -DTICKER_BUILD_BENCH=OFF
+          cmake --build engine/build -j --target ticker-engine
+      - run: pip install pytest
+      - name: Test
+        working-directory: market-sim
+        run: python -m pytest -v

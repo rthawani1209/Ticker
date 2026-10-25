@@ -1,0 +1,9 @@
+name = "rate-shock"
+description = "A surprise rate hike 30 seconds in moves every stock at once; banks rise, tech falls hardest."
+vol_bps_per_min = 30
+news_per_minute = 0.5
+
+[[events]]
+at = 30
+type = "macro"
+kind = "rate_hike"

@@ -1,0 +1,16 @@
+name = "earnings-season"
+description = "Earnings week: a headline every 20 seconds or so, mostly results and analyst calls."
+vol_bps_per_min = 35
+news_per_minute = 3
+
+[news_weights]
+earnings_beat = 4
+earnings_miss = 4
+upgrade = 2
+downgrade = 2
+
+[bots]
+market_makers_per_symbol = 2
+momentum = 6
+noise = 14
+news_traders = 10

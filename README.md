@@ -1,12 +1,13 @@
 # Ticker
 
 [![engine](https://github.com/rthawani1209/Ticker/actions/workflows/engine.yml/badge.svg)](https://github.com/rthawani1209/Ticker/actions/workflows/engine.yml)
+[![market-sim](https://github.com/rthawani1209/Ticker/actions/workflows/market-sim.yml/badge.svg)](https://github.com/rthawani1209/Ticker/actions/workflows/market-sim.yml)
 
 Stock market simulator for student trading competitions, powered by a C++ matching engine.
 
 Students get fake money and trade against each other and against bots on a real order book, so their orders actually move prices. Clubs and classes can run leagues with live leaderboards.
 
-> Work in progress. The matching engine is being built first; the web app, bots and league features follow.
+> Work in progress. The matching engine and trading bots are done; the web app and league features follow.
 
 ## Repo layout
 
@@ -18,7 +19,7 @@ Ticker/
 │   ├── tests/     unit tests and the differential fuzz test
 │   └── bench/     benchmarks and the latency tool
 ├── backend/       Node.js API: logins, orders, leagues, cash and positions (coming)
-├── market-sim/    Python trading bots and the news engine (coming)
+├── market-sim/    Python trading bots, news engine and scenario cases
 ├── frontend/      Next.js web app (coming)
 ├── sdk/python/    starter kit for writing your own trading bot (coming)
 ├── infra/         Docker Compose and AWS deploy (coming)
@@ -52,3 +53,12 @@ Matching takes about 125 ns at the median and 1.5 µs at p99 on a 4-core cloud V
 Start the server with `engine/build/ticker-engine --port 9100 --journal-dir data/`. The protocol is described in [docs/protocol.md](docs/protocol.md).
 
 Run the differential test longer with `TICKER_FUZZ_COMMANDS=1000000 engine/build/engine_tests --gtest_filter='Differential*'`.
+
+## Market simulator
+
+Bots in [`market-sim/`](market-sim) keep the market alive: market makers, momentum traders, noise traders and news traders, driven by a news engine and scenario cases like a flash crash or a meme-stock rally.
+
+```bash
+engine/build/ticker-engine --token 1234 &
+cd market-sim && python -m ticker_sim --token 1234 --scenario flash-crash
+```

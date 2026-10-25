@@ -1,0 +1,39 @@
+name = "meme-rally"
+description = """
+QSTR, a sleepy $12 phone company, catches a run of good news and the momentum crowd
+chases it. A takeover rumor near the end sends it higher still."""
+vol_bps_per_min = 30
+news_per_minute = 0.5
+
+[bots]
+market_makers_per_symbol = 2
+momentum = 16
+noise = 14
+news_traders = 6
+
+[bot_params.momentum]
+threshold_bps = 15
+size = 120
+
+[[events]]
+at = 20
+type = "news"
+symbol = "QSTR"
+kind = "product_launch"
+impact_bps = 600
+headline = "Quasar Mobile's budget phone sells out in hours"
+
+[[events]]
+at = 60
+type = "news"
+symbol = "QSTR"
+kind = "upgrade"
+impact_bps = 500
+
+[[events]]
+at = 110
+type = "news"
+symbol = "QSTR"
+kind = "takeover"
+impact_bps = 1500
+headline = "Report: telecom giant weighing a bid for Quasar Mobile"

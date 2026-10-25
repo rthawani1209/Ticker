@@ -1,0 +1,30 @@
+name = "flash-crash"
+description = """
+Fraud allegation hits ORBT 45 seconds in. Market makers pull back, momentum traders
+pile on, and the drop trips the circuit breaker, which halts ORBT for five minutes.
+Watch how the halt stops the slide and where it reopens."""
+vol_bps_per_min = 30
+news_per_minute = 0.3
+
+[bots]
+market_makers_per_symbol = 2
+momentum = 10
+noise = 12
+news_traders = 8
+
+[bot_params.momentum]
+threshold_bps = 15
+
+[[events]]
+at = 45
+type = "news"
+symbol = "ORBT"
+kind = "fraud"
+impact_bps = -2800
+
+[[events]]
+at = 45
+type = "liquidity_pull"
+symbol = "ORBT"
+seconds = 90
+factor = 8
