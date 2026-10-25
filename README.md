@@ -22,6 +22,7 @@ Ticker/
 ├── frontend/      Next.js web app (coming)
 ├── sdk/python/    starter kit for writing your own trading bot (coming)
 ├── infra/         Docker Compose and AWS deploy (coming)
+├── scripts/       check.sh runs the same builds and tests as CI
 └── docs/          benchmarks, architecture, design decisions, interview notes
 ```
 
