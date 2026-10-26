@@ -1,0 +1,49 @@
+name: backend
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: typecheck and test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: ticker
+          POSTGRES_PASSWORD: ticker
+          POSTGRES_DB: ticker_test
+        ports: ["5432:5432"]
+        options: --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+        options: --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 5s --health-retries 10
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - name: Build the engine for the integration tests
+        working-directory: .
+        run: |
+          cmake -S engine -B engine/build -DCMAKE_BUILD_TYPE=Release -DTICKER_BUILD_TESTS=OFF -DTICKER_BUILD_BENCH=OFF
+          cmake --build engine/build -j --target ticker-engine
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
+      - name: Test
+        env:
+          REDIS_URL: redis://localhost:6379
+        run: npm test
+      - name: Audit dependencies
+        run: npm audit --omit=dev --audit-level=high

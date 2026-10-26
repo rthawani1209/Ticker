@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Run the same builds and tests as CI before pushing.
 # Usage: scripts/check.sh [--fuzz]   (--fuzz adds the 1M-command differential run)
-# clang sanitizer builds need libclang-rt-18-dev (apt install libclang-rt-18-dev); market-sim needs pytest.
+# clang sanitizer builds need libclang-rt-18-dev (apt install libclang-rt-18-dev); market-sim needs pytest; backend needs
+# Node 20+, Postgres and Redis running locally.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -27,6 +28,16 @@ run clang++ RelWithDebInfo thread
 echo "== market-sim"
 (cd market-sim && TICKER_ENGINE=../engine/build-check/g++-release/ticker-engine \
   python3 -m pytest -q > ../engine/build-check/pytest.log 2>&1) || { tail -50 engine/build-check/pytest.log; exit 1; }
+
+echo "== backend"
+# Needs Postgres (ticker/ticker, database ticker_test) and Redis on localhost, like CI.
+(
+  cd backend
+  [ -d node_modules ] || npm ci --silent
+  npm run -s typecheck && npm run -s build && rm -rf dist &&
+    TICKER_ENGINE=../engine/build-check/g++-release/ticker-engine REDIS_URL=${REDIS_URL:-redis://localhost:6379} \
+    npx vitest run > ../engine/build-check/vitest.log 2>&1
+) || { tail -60 engine/build-check/vitest.log; exit 1; }
 
 if [ "${1:-}" = "--fuzz" ]; then
   echo "== differential fuzz (1M commands per seed)"
