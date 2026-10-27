@@ -2,6 +2,8 @@
 // bridge, and kept up to date from the engine's private events.
 import { EventEmitter } from "node:events";
 
+import type { PoolClient } from "pg";
+
 import type { Db } from "./db/pool.js";
 import type { EngineBridge } from "./engine/bridge.js";
 import * as p from "./engine/protocol.js";
@@ -80,11 +82,14 @@ export class OrderService extends EventEmitter {
     super();
     bridge.on("private", (e: p.EngineEvent) => {
       if (e.account === 0 || e.account >= FIRST_BOT_ACCOUNT) return;
-      this.queue = this.queue
-        .then(() => this.apply(e))
-        .catch((err) => {
-          this.emit("error", err);
-        });
+      this.enqueue(() => this.apply(e));
+    });
+    bridge.on("up", () => this.enqueue(() => this.reconcile().then(() => {})));
+  }
+
+  private enqueue(task: () => Promise<void>): void {
+    this.queue = this.queue.then(task).catch((err) => {
+      this.emit("error", err);
     });
   }
 
@@ -187,6 +192,40 @@ export class OrderService extends EventEmitter {
     }));
   }
 
+  // Called when the bridge (re)connects. Replies for anything sent before the drop
+  // are gone, so orders still pending past the submit timeout are given up on.
+  // If the engine did accept one, its next fill or cancel finds it again by
+  // cl_ord_id (see orderForEvent) and brings it back.
+  async reconcile(timeoutMs = 2000): Promise<number> {
+    const { rows } = await this.db.query(
+      `UPDATE orders SET status = 'rejected', leaves = 0, reject_reason = 'exchange_unavailable', updated_at = now()
+       WHERE status = 'pending' AND created_at < now() - make_interval(secs => $1)
+       RETURNING id, user_id`,
+      [timeoutMs / 1000],
+    );
+    for (const r of rows) {
+      const order = await this.get(r.user_id, r.id);
+      if (order) this.emit(`user:${r.user_id}`, order);
+    }
+    return rows.length;
+  }
+
+  // Finds the order an engine event is about: normally by the engine's order id,
+  // or by cl_ord_id (our order id) when the ack never reached us.
+  private async orderForEvent(client: PoolClient, e: p.EngineEvent) {
+    const byEngineId = await client.query(
+      "SELECT id, user_id, symbol_id, side, qty FROM orders WHERE engine_order_id = $1 FOR UPDATE",
+      [e.orderId],
+    );
+    if (byEngineId.rows[0]) return byEngineId.rows[0];
+    const byClId = await client.query(
+      `UPDATE orders SET engine_order_id = $1 WHERE id = $2 AND user_id = $3 AND engine_order_id IS NULL
+       RETURNING id, user_id, symbol_id, side, qty`,
+      [e.orderId, e.clOrdId, e.account],
+    );
+    return byClId.rows[0];
+  }
+
   private async apply(e: p.EngineEvent): Promise<void> {
     let id: number | undefined;
     switch (e.type) {
@@ -210,47 +249,48 @@ export class OrderService extends EventEmitter {
         break;
       }
       case p.EventType.Fill: {
-        const client = await this.db.connect();
-        try {
-          await client.query("BEGIN");
-          const r = await client.query(
+        let fill: { orderId: number } | undefined;
+        await this.tx(async (client) => {
+          const o = await this.orderForEvent(client, e);
+          if (!o) return;
+          id = o.id;
+          // The fill row goes in first: if this exact fill was already recorded
+          // (a replayed or duplicated event), nothing below runs.
+          const inserted = await client.query(
+            `INSERT INTO fills (order_id, user_id, symbol_id, side, price, qty, trade_id)
+             VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT DO NOTHING RETURNING id`,
+            [o.id, o.user_id, o.symbol_id, o.side, e.price, e.qty, e.tradeId],
+          );
+          if (!inserted.rows[0]) return;
+          await client.query(
             `UPDATE orders SET leaves = $2, filled_qty = filled_qty + $3,
                status = CASE WHEN $2 = 0 THEN 'filled'::order_status ELSE 'partially_filled'::order_status END,
-               updated_at = now()
-             WHERE engine_order_id = $1 RETURNING id, user_id, symbol_id, side`,
-            [e.orderId, e.leaves, e.qty],
+               reject_reason = NULL, updated_at = now()
+             WHERE id = $1`,
+            [o.id, e.leaves, e.qty],
           );
-          const o = r.rows[0];
-          if (o) {
-            await client.query(
-              `INSERT INTO fills (order_id, user_id, symbol_id, side, price, qty, trade_id)
-               VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT DO NOTHING`,
-              [o.id, o.user_id, o.symbol_id, o.side, e.price, e.qty, e.tradeId],
-            );
-            id = o.id;
-          }
-          await client.query("COMMIT");
-        } catch (err) {
-          await client.query("ROLLBACK").catch(() => {});
-          throw err;
-        } finally {
-          client.release();
-        }
-        if (id !== undefined) {
+          fill = { orderId: o.id };
+        });
+        if (fill) {
           this.emit(`fill:${e.account}`, {
-            orderId: id, symbol: e.symbol, side: e.side === p.Side.Buy ? "buy" : "sell", price: e.price, qty: e.qty,
+            orderId: fill.orderId, symbol: e.symbol, side: e.side === p.Side.Buy ? "buy" : "sell", price: e.price, qty: e.qty,
           });
         }
         break;
       }
       case p.EventType.Cancelled: {
-        const r = await this.db.query(
-          `UPDATE orders SET status = 'cancelled', leaves = 0, updated_at = now(),
-             reject_reason = CASE WHEN $2 = 'user' THEN NULL ELSE $2 END
-           WHERE engine_order_id = $1 RETURNING id`,
-          [e.orderId, p.CANCEL_REASONS[e.reason] ?? String(e.reason)],
-        );
-        id = r.rows[0]?.id;
+        await this.tx(async (client) => {
+          const o = await this.orderForEvent(client, e);
+          if (!o) return;
+          const reason = p.CANCEL_REASONS[e.reason] ?? String(e.reason);
+          await client.query(
+            `UPDATE orders SET status = 'cancelled', leaves = 0, updated_at = now(),
+               reject_reason = CASE WHEN $2 = 'user' THEN NULL ELSE $2 END
+             WHERE id = $1`,
+            [o.id, reason],
+          );
+          id = o.id;
+        });
         break;
       }
       case p.EventType.Replaced: {
@@ -265,6 +305,20 @@ export class OrderService extends EventEmitter {
     if (id !== undefined) {
       const order = await this.get(e.account, id);
       if (order) this.emit(`user:${e.account}`, order);
+    }
+  }
+
+  private async tx(fn: (client: PoolClient) => Promise<void>): Promise<void> {
+    const client = await this.db.connect();
+    try {
+      await client.query("BEGIN");
+      await fn(client);
+      await client.query("COMMIT");
+    } catch (err) {
+      await client.query("ROLLBACK").catch(() => {});
+      throw err;
+    } finally {
+      client.release();
     }
   }
 }

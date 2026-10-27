@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import * as p from "../src/engine/protocol.js";
 import { auth, signUp, startBackend, type Backend } from "./harness.js";
 
 let b: Backend;
@@ -109,5 +110,49 @@ describe("orders", () => {
   it("reports health", async () => {
     const res = await b.app.inject({ url: "/health" });
     expect(res.json()).toEqual({ ok: true, db: true, engine: true });
+  });
+});
+
+describe("engine events", () => {
+  const fillEvent = (o: { engineOrderId: number; id: number; account: number }, tradeId: number, qty: number, leaves: number) => ({
+    kind: "event", type: p.EventType.Fill, side: p.Side.Sell, reason: 0, symbol: 4, session: 1, account: o.account,
+    orderId: o.engineOrderId, clOrdId: o.id, price: 9_750, qty, leaves, tradeId, levelQty: 0,
+  });
+
+  it("records a repeated fill only once", async () => {
+    const order = (await place(alice.token, { symbol: "VYNE", side: "sell", price: 9_750, qty: 10 })).json();
+    const { rows } = await b.db.query("SELECT engine_order_id FROM orders WHERE id = $1", [order.id]);
+    const ev = fillEvent({ engineOrderId: rows[0].engine_order_id, id: order.id, account: alice.id }, 990_001, 4, 6);
+    b.bridge.emit("private", ev);
+    b.bridge.emit("private", ev); // the same event again
+    await b.orders.settled();
+
+    const after = (await b.app.inject({ url: `/api/orders/${order.id}`, headers: auth(alice.token) })).json();
+    expect(after).toMatchObject({ filledQty: 4, leaves: 6, status: "partially_filled" });
+    const fills = await b.db.query("SELECT count(*)::int AS n FROM fills WHERE order_id = $1", [order.id]);
+    expect(fills.rows[0].n).toBe(1);
+  });
+
+  it("gives up on pending orders after a reconnect, and picks them up again if they trade", async () => {
+    // An order the engine never acknowledged (as if the connection dropped right after sending).
+    const { rows } = await b.db.query(
+      `INSERT INTO orders (user_id, symbol_id, side, type, tif, price, qty, leaves, created_at)
+       VALUES ($1, 4, 'sell', 'limit', 'gtc', 9750, 10, 10, now() - interval '1 minute') RETURNING id`,
+      [alice.id],
+    );
+    const id = rows[0].id;
+
+    const reconnected = new Promise((resolve) => b.bridge.once("up", resolve));
+    (b.bridge as any).socket.destroy();
+    await reconnected;
+    await b.orders.settled();
+    const lost = (await b.app.inject({ url: `/api/orders/${id}`, headers: auth(alice.token) })).json();
+    expect(lost).toMatchObject({ status: "rejected", rejectReason: "exchange_unavailable" });
+
+    // Turns out the engine did take it: its first fill finds the order by cl_ord_id.
+    b.bridge.emit("private", fillEvent({ engineOrderId: 5 * 2 ** 40 + 777, id, account: alice.id }, 990_002, 3, 7));
+    await b.orders.settled();
+    const back = (await b.app.inject({ url: `/api/orders/${id}`, headers: auth(alice.token) })).json();
+    expect(back).toMatchObject({ status: "partially_filled", filledQty: 3, leaves: 7, rejectReason: null });
   });
 });
