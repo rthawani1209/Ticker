@@ -1,5 +1,7 @@
 # Benchmarks
 
+The latest machine-readable results are in [`results/`](results), produced by `scripts/bench.sh`. [CLAIMS.md](CLAIMS.md) quotes those files. The write-up below is from the first run on 2026-10-23. A run on the same type of VM on 2026-10-27 came out slower (p50 205 ns, 5.2M cmd/s). Shared cloud VMs vary that much from run to run, which is why every number is quoted with its file and date.
+
 Numbers from the engine's own tools. Re-run them yourself:
 
 ```bash

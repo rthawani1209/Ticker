@@ -13,19 +13,19 @@ All prices are in cents. Authenticated routes take `Authorization: Bearer <acces
 
 | Method | Path | |
 |--------|------|---|
-| POST | `/api/auth/register` | `{email, username, password}` → `{accessToken, user}` and the refresh cookie |
-| POST | `/api/auth/login` | `{email, password}` |
-| POST | `/api/auth/refresh` | swaps the refresh cookie for a new one and a new access token |
-| POST | `/api/auth/logout` | |
-| GET | `/api/me` | |
-| POST | `/api/orders` | `{symbol, side, type?, tif?, qty, price?, stopPrice?}` |
-| GET | `/api/orders` | `?open=true&limit=50&before=<id>` |
-| GET/DELETE | `/api/orders/:id` | DELETE cancels |
-| GET | `/api/fills` | |
-| GET | `/api/symbols` | every stock with last price, bid/ask and volume |
-| GET | `/api/market/:ticker` | `?depth=10` |
-| GET | `/api/market/:ticker/trades` | last 100 trades |
-| GET | `/api/engine/stats` | engine throughput and latency |
+| POST | `/v1/auth/register` | `{email, username, password}` → `{accessToken, user}` and the refresh cookie |
+| POST | `/v1/auth/login` | `{email, password}` |
+| POST | `/v1/auth/refresh` | swaps the refresh cookie for a new one and a new access token |
+| POST | `/v1/auth/logout` | |
+| GET | `/v1/me` | |
+| POST | `/v1/orders` | `{symbol, side, type?, tif?, qty, price?, stopPrice?}` |
+| GET | `/v1/orders` | `?open=true&limit=50&before=<id>` |
+| GET/DELETE | `/v1/orders/:id` | DELETE cancels |
+| GET | `/v1/fills` | |
+| GET | `/v1/symbols` | every stock with last price, bid/ask and volume |
+| GET | `/v1/market/:ticker` | `?depth=10` |
+| GET | `/v1/market/:ticker/trades` | last 100 trades |
+| GET | `/v1/engine/stats` | engine throughput and latency |
 | GET | `/health` | |
 
 WebSocket at `/ws` (pass `?token=` or send `{"op":"auth","token":...}`), then `{"op":"subscribe","channel":...}` for `book:NOVA`, `trades:NOVA`, `status` or `me:orders`.

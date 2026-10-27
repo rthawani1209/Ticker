@@ -78,7 +78,7 @@ let n = 0;
 export async function signUp(b: Backend, name = `user${++n}_${process.pid}`) {
   const res = await b.app.inject({
     method: "POST",
-    url: "/api/auth/register",
+    url: "/v1/auth/register",
     payload: { email: `${name}@example.com`, username: name, password: "correct horse battery" },
   });
   if (res.statusCode !== 201) throw new Error(`register failed: ${res.body}`);

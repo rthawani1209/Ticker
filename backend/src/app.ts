@@ -92,10 +92,10 @@ export async function buildApp(deps: Deps, opts: { logger?: boolean } = {}) {
     return reply.code(ok ? 200 : 503).send({ ok, db, engine: deps.bridge.connected });
   });
 
-  await app.register(authRoutes, { prefix: "/api/auth" });
-  await app.register(orderRoutes, { prefix: "/api/orders" });
-  await app.register(fillRoutes, { prefix: "/api/fills" });
-  await app.register(marketRoutes, { prefix: "/api" });
+  await app.register(authRoutes, { prefix: "/v1/auth" });
+  await app.register(orderRoutes, { prefix: "/v1/orders" });
+  await app.register(fillRoutes, { prefix: "/v1/fills" });
+  await app.register(marketRoutes, { prefix: "/v1" });
   await app.register(
     async (scope) => {
       scope.addHook("preHandler", scope.authenticate);
@@ -105,7 +105,7 @@ export async function buildApp(deps: Deps, opts: { logger?: boolean } = {}) {
         return { id: u.id, email: u.email, username: u.username, role: u.role, createdAt: u.created_at.toISOString() };
       });
     },
-    { prefix: "/api/me" },
+    { prefix: "/v1/me" },
   );
   await app.register(wsRoutes);
   return app;

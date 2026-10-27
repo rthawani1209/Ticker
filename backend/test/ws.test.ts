@@ -39,7 +39,7 @@ function connect(query = ""): Promise<{ ws: WebSocket; next: (channel: string) =
 
 const send = (ws: WebSocket, msg: object) => ws.send(JSON.stringify(msg));
 const place = (token: string, payload: object) =>
-  b.app.inject({ method: "POST", url: "/api/orders", headers: auth(token), payload });
+  b.app.inject({ method: "POST", url: "/v1/orders", headers: auth(token), payload });
 
 describe("websocket", () => {
   it("streams the book and trades", async () => {

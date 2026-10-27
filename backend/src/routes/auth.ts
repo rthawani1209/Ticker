@@ -24,7 +24,7 @@ export default async function authRoutes(app: FastifyInstance) {
       httpOnly: true,
       secure: config.NODE_ENV === "production",
       sameSite: "strict",
-      path: "/api/auth",
+      path: "/v1/auth",
       maxAge: REFRESH_TTL_S,
     });
 
@@ -71,7 +71,7 @@ export default async function authRoutes(app: FastifyInstance) {
     if (!token) return reply.code(401).send({ error: "no_session", message: "not logged in" });
     const result = await tokens.rotate(token, meta(req));
     if ("error" in result) {
-      reply.clearCookie(COOKIE, { path: "/api/auth" });
+      reply.clearCookie(COOKIE, { path: "/v1/auth" });
       if (result.error === "reused") await audit(db, null, "refresh_reuse", {}, req.ip);
       return reply.code(401).send({ error: "no_session", message: "session expired, log in again" });
     }
@@ -85,7 +85,7 @@ export default async function authRoutes(app: FastifyInstance) {
       const userId = await tokens.revokeFamilyOf(token);
       if (userId) await audit(db, userId, "logout", {}, req.ip);
     }
-    reply.clearCookie(COOKIE, { path: "/api/auth" });
+    reply.clearCookie(COOKIE, { path: "/v1/auth" });
     return reply.code(204).send();
   });
 }

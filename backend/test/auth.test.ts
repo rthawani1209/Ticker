@@ -14,10 +14,10 @@ const post = (url: string, payload?: object, cookie?: string) =>
 describe("auth", () => {
   it("registers, then logs in with the same password", async () => {
     const u = await signUp(b, "alice");
-    const me = await b.app.inject({ url: "/api/me", headers: auth(u.token) });
+    const me = await b.app.inject({ url: "/v1/me", headers: auth(u.token) });
     expect(me.json()).toMatchObject({ username: "alice", email: "alice@example.com", role: "student" });
 
-    const login = await post("/api/auth/login", { email: "ALICE@example.com", password: "correct horse battery" });
+    const login = await post("/v1/auth/login", { email: "ALICE@example.com", password: "correct horse battery" });
     expect(login.statusCode).toBe(200);
     expect(login.json().user.username).toBe("alice");
   });
@@ -28,23 +28,23 @@ describe("auth", () => {
   });
 
   it("rejects a wrong password and an unknown email the same way", async () => {
-    const wrong = await post("/api/auth/login", { email: "alice@example.com", password: "nope nope nope" });
-    const unknown = await post("/api/auth/login", { email: "nobody@example.com", password: "nope nope nope" });
+    const wrong = await post("/v1/auth/login", { email: "alice@example.com", password: "nope nope nope" });
+    const unknown = await post("/v1/auth/login", { email: "nobody@example.com", password: "nope nope nope" });
     expect(wrong.statusCode).toBe(401);
     expect(unknown.statusCode).toBe(401);
     expect(wrong.json()).toEqual(unknown.json());
   });
 
   it("refuses duplicate emails and weak input", async () => {
-    expect((await post("/api/auth/register", { email: "alice@example.com", username: "alice2", password: "long enough pw" })).statusCode).toBe(409);
-    const bad = await post("/api/auth/register", { email: "not-an-email", username: "x", password: "short" });
+    expect((await post("/v1/auth/register", { email: "alice@example.com", username: "alice2", password: "long enough pw" })).statusCode).toBe(409);
+    const bad = await post("/v1/auth/register", { email: "not-an-email", username: "x", password: "short" });
     expect(bad.statusCode).toBe(400);
     expect(bad.json().issues.map((i: any) => i.path).sort()).toEqual(["email", "password", "username"]);
   });
 
   it("rotates refresh tokens and revokes the family when an old one is reused", async () => {
     const u = await signUp(b);
-    const first = await post("/api/auth/refresh", undefined, u.cookie);
+    const first = await post("/v1/auth/refresh", undefined, u.cookie);
     expect(first.statusCode).toBe(200);
     const second = first.cookies.find((c) => c.name === "ticker_rt")!.value;
     expect(second).not.toBe(u.cookie);
@@ -54,8 +54,8 @@ describe("auth", () => {
     await b.db.query("UPDATE refresh_tokens SET used_at = now() - interval '1 minute' WHERE user_id = $1 AND used_at IS NOT NULL", [u.id]);
 
     // Replaying it now looks like theft: everything in the family dies.
-    expect((await post("/api/auth/refresh", undefined, u.cookie)).statusCode).toBe(401);
-    expect((await post("/api/auth/refresh", undefined, second)).statusCode).toBe(401);
+    expect((await post("/v1/auth/refresh", undefined, u.cookie)).statusCode).toBe(401);
+    expect((await post("/v1/auth/refresh", undefined, second)).statusCode).toBe(401);
     const { rows } = await b.db.query("SELECT count(*)::int AS n FROM audit_log WHERE action = 'refresh_reuse'");
     expect(rows[0].n).toBe(1);
   });
@@ -63,43 +63,43 @@ describe("auth", () => {
   it("lets two tabs refresh with the same token at once", async () => {
     const u = await signUp(b);
     const [a, c] = await Promise.all([
-      post("/api/auth/refresh", undefined, u.cookie),
-      post("/api/auth/refresh", undefined, u.cookie),
+      post("/v1/auth/refresh", undefined, u.cookie),
+      post("/v1/auth/refresh", undefined, u.cookie),
     ]);
     expect([a.statusCode, c.statusCode]).toEqual([200, 200]);
     const tokenA = a.cookies.find((x) => x.name === "ticker_rt")!.value;
     const tokenC = c.cookies.find((x) => x.name === "ticker_rt")!.value;
     // Both new sessions keep working; nothing was revoked.
-    expect((await post("/api/auth/refresh", undefined, tokenA)).statusCode).toBe(200);
-    expect((await post("/api/auth/refresh", undefined, tokenC)).statusCode).toBe(200);
+    expect((await post("/v1/auth/refresh", undefined, tokenA)).statusCode).toBe(200);
+    expect((await post("/v1/auth/refresh", undefined, tokenC)).statusCode).toBe(200);
     const { rows } = await b.db.query("SELECT count(*)::int AS n FROM refresh_tokens WHERE user_id = $1 AND revoked_at IS NOT NULL", [u.id]);
     expect(rows[0].n).toBe(0);
   });
 
   it("logout ends the session", async () => {
     const u = await signUp(b);
-    expect((await post("/api/auth/logout", undefined, u.cookie)).statusCode).toBe(204);
-    expect((await post("/api/auth/refresh", undefined, u.cookie)).statusCode).toBe(401);
+    expect((await post("/v1/auth/logout", undefined, u.cookie)).statusCode).toBe(204);
+    expect((await post("/v1/auth/refresh", undefined, u.cookie)).statusCode).toBe(401);
   });
 
   it("sets the refresh cookie httpOnly and scoped to the auth routes", async () => {
-    const res = await post("/api/auth/register", { email: "c@example.com", username: "carol", password: "correct horse battery" });
+    const res = await post("/v1/auth/register", { email: "c@example.com", username: "carol", password: "correct horse battery" });
     const c = res.cookies.find((x) => x.name === "ticker_rt")!;
     expect(c.httpOnly).toBe(true);
-    expect(c.path).toBe("/api/auth");
+    expect(c.path).toBe("/v1/auth");
     expect(c.sameSite).toBe("Strict");
   });
 
   it("requires a valid access token", async () => {
-    expect((await b.app.inject({ url: "/api/me" })).statusCode).toBe(401);
-    expect((await b.app.inject({ url: "/api/me", headers: auth("garbage") })).statusCode).toBe(401);
+    expect((await b.app.inject({ url: "/v1/me" })).statusCode).toBe(401);
+    expect((await b.app.inject({ url: "/v1/me", headers: auth("garbage") })).statusCode).toBe(401);
   });
 
   it("ignores X-Forwarded-For unless TRUST_PROXY is on", async () => {
     const codes: number[] = [];
     for (let i = 0; i < 11; i++) {
       const res = await b.app.inject({
-        method: "POST", url: "/api/auth/login", remoteAddress: "10.7.7.7",
+        method: "POST", url: "/v1/auth/login", remoteAddress: "10.7.7.7",
         headers: { "x-forwarded-for": `203.0.113.${i}` }, // a new "IP" every time
         payload: { email: "alice@example.com", password: "guessing guess" },
       });
@@ -114,7 +114,7 @@ describe("auth", () => {
     const codes: number[] = [];
     for (let i = 0; i < 12; i++) {
       const res = await b.app.inject({
-        method: "POST", url: "/api/auth/login", remoteAddress: "10.9.9.9",
+        method: "POST", url: "/v1/auth/login", remoteAddress: "10.9.9.9",
         payload: { email: "alice@example.com", password: "guessing guess" },
       });
       codes.push(res.statusCode);

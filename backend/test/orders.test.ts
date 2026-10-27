@@ -15,7 +15,7 @@ beforeAll(async () => {
 afterAll(() => b?.stop());
 
 const place = (token: string, payload: object) =>
-  b.app.inject({ method: "POST", url: "/api/orders", headers: auth(token), payload });
+  b.app.inject({ method: "POST", url: "/v1/orders", headers: auth(token), payload });
 
 describe("orders", () => {
   it("rests a limit order on the book", async () => {
@@ -23,7 +23,7 @@ describe("orders", () => {
     expect(res.statusCode).toBe(201);
     expect(res.json()).toMatchObject({ symbol: "NOVA", side: "buy", type: "limit", tif: "gtc", status: "open", leaves: 10 });
 
-    const book = (await b.app.inject({ url: "/api/market/NOVA" })).json().book;
+    const book = (await b.app.inject({ url: "/v1/market/NOVA" })).json().book;
     expect(book.bids).toContainEqual({ price: 13_900, qty: 10 });
   });
 
@@ -36,29 +36,29 @@ describe("orders", () => {
     expect(buy.json()).toMatchObject({ status: "filled", filledQty: 12, leaves: 0 });
 
     await b.orders.settled();
-    const aliceOrder = (await b.app.inject({ url: `/api/orders/${sell.json().id}`, headers: auth(alice.token) })).json();
+    const aliceOrder = (await b.app.inject({ url: `/v1/orders/${sell.json().id}`, headers: auth(alice.token) })).json();
     expect(aliceOrder).toMatchObject({ status: "partially_filled", filledQty: 12, leaves: 18 });
 
-    const fills = (await b.app.inject({ url: "/api/fills", headers: auth(bob.token) })).json();
+    const fills = (await b.app.inject({ url: "/v1/fills", headers: auth(bob.token) })).json();
     expect(fills[0]).toMatchObject({ symbol: "HELX", side: "buy", price: 5_810, qty: 12 });
 
-    const trades = (await b.app.inject({ url: "/api/market/HELX/trades" })).json();
+    const trades = (await b.app.inject({ url: "/v1/market/HELX/trades" })).json();
     expect(trades[0]).toMatchObject({ price: 5_810, qty: 12 });
   });
 
   it("cancels an open order", async () => {
     const o = (await place(alice.token, { symbol: "KILN", side: "sell", price: 2_600, qty: 5 })).json();
-    const res = await b.app.inject({ method: "DELETE", url: `/api/orders/${o.id}`, headers: auth(alice.token) });
+    const res = await b.app.inject({ method: "DELETE", url: `/v1/orders/${o.id}`, headers: auth(alice.token) });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toMatchObject({ status: "cancelled", leaves: 0 });
-    const again = await b.app.inject({ method: "DELETE", url: `/api/orders/${o.id}`, headers: auth(alice.token) });
+    const again = await b.app.inject({ method: "DELETE", url: `/v1/orders/${o.id}`, headers: auth(alice.token) });
     expect(again.statusCode).toBe(409);
   });
 
   it("does not let users see or cancel each other's orders", async () => {
     const o = (await place(alice.token, { symbol: "KILN", side: "buy", price: 2_400, qty: 5 })).json();
-    expect((await b.app.inject({ url: `/api/orders/${o.id}`, headers: auth(bob.token) })).statusCode).toBe(404);
-    expect((await b.app.inject({ method: "DELETE", url: `/api/orders/${o.id}`, headers: auth(bob.token) })).statusCode).toBe(404);
+    expect((await b.app.inject({ url: `/v1/orders/${o.id}`, headers: auth(bob.token) })).statusCode).toBe(404);
+    expect((await b.app.inject({ method: "DELETE", url: `/v1/orders/${o.id}`, headers: auth(bob.token) })).statusCode).toBe(404);
   });
 
   it("returns the exchange's reject reason", async () => {
@@ -86,12 +86,12 @@ describe("orders", () => {
   });
 
   it("needs a login", async () => {
-    const res = await b.app.inject({ method: "POST", url: "/api/orders", payload: { symbol: "NOVA", side: "buy", price: 1, qty: 1 } });
+    const res = await b.app.inject({ method: "POST", url: "/v1/orders", payload: { symbol: "NOVA", side: "buy", price: 1, qty: 1 } });
     expect(res.statusCode).toBe(401);
   });
 
   it("lists open orders newest first", async () => {
-    const open = (await b.app.inject({ url: "/api/orders?open=true", headers: auth(alice.token) })).json();
+    const open = (await b.app.inject({ url: "/v1/orders?open=true", headers: auth(alice.token) })).json();
     expect(open.length).toBeGreaterThan(0);
     expect(open.every((o: any) => ["open", "partially_filled"].includes(o.status))).toBe(true);
     expect(open.map((o: any) => o.id)).toEqual([...open.map((o: any) => o.id)].sort((x: number, y: number) => y - x));
@@ -127,7 +127,7 @@ describe("engine events", () => {
     b.bridge.emit("private", ev); // the same event again
     await b.orders.settled();
 
-    const after = (await b.app.inject({ url: `/api/orders/${order.id}`, headers: auth(alice.token) })).json();
+    const after = (await b.app.inject({ url: `/v1/orders/${order.id}`, headers: auth(alice.token) })).json();
     expect(after).toMatchObject({ filledQty: 4, leaves: 6, status: "partially_filled" });
     const fills = await b.db.query("SELECT count(*)::int AS n FROM fills WHERE order_id = $1", [order.id]);
     expect(fills.rows[0].n).toBe(1);
@@ -146,13 +146,13 @@ describe("engine events", () => {
     (b.bridge as any).socket.destroy();
     await reconnected;
     await b.orders.settled();
-    const lost = (await b.app.inject({ url: `/api/orders/${id}`, headers: auth(alice.token) })).json();
+    const lost = (await b.app.inject({ url: `/v1/orders/${id}`, headers: auth(alice.token) })).json();
     expect(lost).toMatchObject({ status: "rejected", rejectReason: "exchange_unavailable" });
 
     // Turns out the engine did take it: its first fill finds the order by cl_ord_id.
     b.bridge.emit("private", fillEvent({ engineOrderId: 5 * 2 ** 40 + 777, id, account: alice.id }, 990_002, 3, 7));
     await b.orders.settled();
-    const back = (await b.app.inject({ url: `/api/orders/${id}`, headers: auth(alice.token) })).json();
+    const back = (await b.app.inject({ url: `/v1/orders/${id}`, headers: auth(alice.token) })).json();
     expect(back).toMatchObject({ status: "partially_filled", filledQty: 3, leaves: 7, rejectReason: null });
   });
 });
