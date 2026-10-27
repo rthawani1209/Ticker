@@ -40,7 +40,7 @@ declare module "fastify" {
 }
 
 export async function buildApp(deps: Deps, opts: { logger?: boolean } = {}) {
-  const app = Fastify({ logger: opts.logger ?? false, trustProxy: true, bodyLimit: 16 * 1024 });
+  const app = Fastify({ logger: opts.logger ?? false, trustProxy: deps.config.TRUST_PROXY, bodyLimit: 16 * 1024 });
   app.decorate("deps", deps);
 
   await app.register(helmet);

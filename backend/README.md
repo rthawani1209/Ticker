@@ -30,6 +30,12 @@ All prices are in cents. Authenticated routes take `Authorization: Bearer <acces
 
 WebSocket at `/ws` (pass `?token=` or send `{"op":"auth","token":...}`), then `{"op":"subscribe","channel":...}` for `book:NOVA`, `trades:NOVA`, `status` or `me:orders`.
 
+## Known limits
+
+- If the connection to the engine drops, replies sent while it was down are lost. On reconnect, orders still waiting for an acknowledgement are marked rejected (`exchange_unavailable`). If the engine did accept one, its next fill or cancel carries our order id and brings it back. Fills that happen while the backend is disconnected are not recovered yet. The fix is for the engine to number its output and replay from a sequence number when a session logs back on.
+- Run the engine with `--journal-dir` in any real deployment so resting orders survive an engine restart.
+- Set `TRUST_PROXY=true` only behind a load balancer that sets `X-Forwarded-For`. Otherwise clients could choose their own IP and dodge the per-IP limits.
+
 ## Running it
 
 ```bash

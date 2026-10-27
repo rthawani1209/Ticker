@@ -11,6 +11,9 @@ const Env = z.object({
   ENGINE_PORT: z.coerce.number().int().default(9100),
   ENGINE_TOKEN: z.coerce.bigint().default(0n),
   CORS_ORIGIN: z.string().default("http://localhost:3000"),
+  // Only behind a load balancer that sets X-Forwarded-For. Otherwise clients could
+  // pick their own IP and dodge per-IP rate limits.
+  TRUST_PROXY: z.enum(["true", "false", "1", "0"]).default("false").transform((v) => v === "true" || v === "1"),
 });
 
 export type Config = z.infer<typeof Env>;
