@@ -10,9 +10,12 @@ import { ZodError } from "zod";
 import type { AccessClaims, Tokens } from "./auth/tokens.js";
 import type { Config } from "./config.js";
 import type { Db } from "./db/pool.js";
+import { ApiError } from "./errors.js";
 import type { EngineBridge } from "./engine/bridge.js";
+import type { Leaderboard } from "./leaderboard.js";
 import type { OrderService } from "./orders.js";
 import authRoutes from "./routes/auth.js";
+import leagueRoutes, { positionRoutes } from "./routes/leagues.js";
 import marketRoutes from "./routes/market.js";
 import orderRoutes, { fillRoutes } from "./routes/orders.js";
 import type { SymbolInfo } from "./symbols.js";
@@ -24,6 +27,7 @@ export interface Deps {
   redis?: Redis;
   bridge: EngineBridge;
   orders: OrderService;
+  leaderboard: Leaderboard;
   tokens: Tokens;
   symbols: SymbolInfo[];
   symbolsByTicker: Map<string, SymbolInfo>;
@@ -66,6 +70,7 @@ export async function buildApp(deps: Deps, opts: { logger?: boolean } = {}) {
   });
 
   app.setErrorHandler((err, req, reply) => {
+    if (err instanceof ApiError) return reply.code(err.status).send({ error: err.code, message: err.message });
     if (err instanceof ZodError) {
       return reply.code(400).send({
         error: "invalid_request",
@@ -95,6 +100,8 @@ export async function buildApp(deps: Deps, opts: { logger?: boolean } = {}) {
   await app.register(authRoutes, { prefix: "/v1/auth" });
   await app.register(orderRoutes, { prefix: "/v1/orders" });
   await app.register(fillRoutes, { prefix: "/v1/fills" });
+  await app.register(leagueRoutes, { prefix: "/v1/leagues" });
+  await app.register(positionRoutes, { prefix: "/v1/positions" });
   await app.register(marketRoutes, { prefix: "/v1" });
   await app.register(
     async (scope) => {

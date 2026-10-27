@@ -38,6 +38,12 @@ export class SymbolBook {
     }
   }
 
+  bestAsk(): number | undefined {
+    let best: number | undefined;
+    for (const price of this.asks.keys()) if (best === undefined || price < best) best = price;
+    return best;
+  }
+
   depth(levels = 10) {
     const sorted = (m: Map<number, number>, desc: boolean) =>
       [...m.entries()].sort((a, b) => (desc ? b[0] - a[0] : a[0] - b[0])).slice(0, levels)

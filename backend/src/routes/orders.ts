@@ -3,7 +3,6 @@ import { decodeJwt } from "jose";
 import { z } from "zod";
 
 import { audit } from "../audit.js";
-import { OrderError } from "../orders.js";
 
 const Cents = z.number().int().positive().max(10_000_000);
 
@@ -16,6 +15,7 @@ const NewOrder = z
     qty: z.number().int().positive().max(100_000),
     price: Cents.optional(),
     stopPrice: Cents.optional(),
+    league: z.number().int().positive().optional(), // defaults to the practice league
   })
   .superRefine((o, ctx) => {
     const needsPrice = o.type === "limit" || o.type === "stop_limit";
@@ -31,6 +31,7 @@ const NewOrder = z
 const Id = z.object({ id: z.coerce.number().int().positive() });
 const ListQuery = z.object({
   open: z.enum(["true", "false"]).optional(),
+  league: z.coerce.number().int().positive().optional(),
   limit: z.coerce.number().int().min(1).max(200).default(50),
   before: z.coerce.number().int().positive().optional(),
 });
@@ -49,19 +50,15 @@ export default async function orderRoutes(app: FastifyInstance) {
     if (!sym) return reply.code(422).send({ error: "unknown_symbol", message: `no symbol ${body.symbol}` });
     // Market orders can only be immediate; everything else rests until cancelled by default.
     const tif = body.tif ?? (body.type === "market" ? "ioc" : "gtc");
-    try {
-      const order = await orders.place(req.user.userId, { ...body, symbolId: sym.id, tif });
-      await audit(db, req.user.userId, "order_new", { orderId: order.id, symbol: sym.ticker, side: body.side, qty: body.qty }, req.ip);
-      return reply.code(order.status === "rejected" ? 422 : 201).send(order);
-    } catch (err) {
-      if (err instanceof OrderError) return reply.code(err.status).send({ error: err.code, message: err.message });
-      throw err;
-    }
+    const { league, ...input } = body;
+    const order = await orders.place(req.user.userId, { ...input, symbolId: sym.id, tif }, league);
+    await audit(db, req.user.userId, "order_new", { orderId: order.id, league: order.league, symbol: sym.ticker, side: body.side, qty: body.qty }, req.ip);
+    return reply.code(order.status === "rejected" ? 422 : 201).send(order);
   });
 
   app.get("/", async (req) => {
     const q = ListQuery.parse(req.query);
-    return orders.list(req.user.userId, { open: q.open === "true" ? true : undefined, limit: q.limit, before: q.before });
+    return orders.list(req.user.userId, { open: q.open === "true" ? true : undefined, league: q.league, limit: q.limit, before: q.before });
   });
 
   app.get("/:id", async (req, reply) => {
@@ -70,24 +67,21 @@ export default async function orderRoutes(app: FastifyInstance) {
     return order ?? reply.code(404).send({ error: "not_found", message: "no such order" });
   });
 
-  app.delete("/:id", { config: orderLimit }, async (req, reply) => {
+  app.delete("/:id", { config: orderLimit }, async (req) => {
     const { id } = Id.parse(req.params);
-    try {
-      const order = await orders.cancel(req.user.userId, id);
-      await audit(db, req.user.userId, "order_cancel", { orderId: id }, req.ip);
-      return order;
-    } catch (err) {
-      if (err instanceof OrderError) return reply.code(err.status).send({ error: err.code, message: err.message });
-      throw err;
-    }
+    const order = await orders.cancel(req.user.userId, id);
+    await audit(db, req.user.userId, "order_cancel", { orderId: id }, req.ip);
+    return order;
   });
 }
 
 export async function fillRoutes(app: FastifyInstance) {
   app.addHook("preHandler", app.authenticate);
   app.get("/", async (req) => {
-    const { limit } = z.object({ limit: z.coerce.number().int().min(1).max(500).default(100) }).parse(req.query);
-    return app.deps.orders.fills(req.user.userId, limit);
+    const q = z
+      .object({ limit: z.coerce.number().int().min(1).max(500).default(100), league: z.coerce.number().int().positive().optional() })
+      .parse(req.query);
+    return app.deps.orders.fills(req.user.userId, q);
   });
 }
 

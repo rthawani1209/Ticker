@@ -122,7 +122,7 @@ describe("engine events", () => {
   it("records a repeated fill only once", async () => {
     const order = (await place(alice.token, { symbol: "VYNE", side: "sell", price: 9_750, qty: 10 })).json();
     const { rows } = await b.db.query("SELECT engine_order_id FROM orders WHERE id = $1", [order.id]);
-    const ev = fillEvent({ engineOrderId: rows[0].engine_order_id, id: order.id, account: alice.id }, 990_001, 4, 6);
+    const ev = fillEvent({ engineOrderId: rows[0].engine_order_id, id: order.id, account: alice.portfolio }, 990_001, 4, 6);
     b.bridge.emit("private", ev);
     b.bridge.emit("private", ev); // the same event again
     await b.orders.settled();
@@ -136,9 +136,9 @@ describe("engine events", () => {
   it("gives up on pending orders after a reconnect, and picks them up again if they trade", async () => {
     // An order the engine never acknowledged (as if the connection dropped right after sending).
     const { rows } = await b.db.query(
-      `INSERT INTO orders (user_id, symbol_id, side, type, tif, price, qty, leaves, created_at)
-       VALUES ($1, 4, 'sell', 'limit', 'gtc', 9750, 10, 10, now() - interval '1 minute') RETURNING id`,
-      [alice.id],
+      `INSERT INTO orders (user_id, portfolio_id, symbol_id, side, type, tif, price, qty, leaves, created_at)
+       VALUES ($1, $2, 4, 'sell', 'limit', 'gtc', 9750, 10, 10, now() - interval '1 minute') RETURNING id`,
+      [alice.id, alice.portfolio],
     );
     const id = rows[0].id;
 
@@ -150,7 +150,7 @@ describe("engine events", () => {
     expect(lost).toMatchObject({ status: "rejected", rejectReason: "exchange_unavailable" });
 
     // Turns out the engine did take it: its first fill finds the order by cl_ord_id.
-    b.bridge.emit("private", fillEvent({ engineOrderId: 5 * 2 ** 40 + 777, id, account: alice.id }, 990_002, 3, 7));
+    b.bridge.emit("private", fillEvent({ engineOrderId: 5 * 2 ** 40 + 777, id, account: alice.portfolio }, 990_002, 3, 7));
     await b.orders.settled();
     const back = (await b.app.inject({ url: `/v1/orders/${id}`, headers: auth(alice.token) })).json();
     expect(back).toMatchObject({ status: "partially_filled", filledQty: 3, leaves: 7, rejectReason: null });

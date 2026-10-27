@@ -49,11 +49,26 @@ Status: **done** = built and proven; **partial** = built, proof or number still 
 | Login and order rate limits in Redis | done | `auth.test.ts` (`rate limits login attempts`), `orders.test.ts` (`rate limits order entry per user`) | same | 10 logins/min per IP, 20 orders/s per user |
 | Zod validation on every input, parameterized SQL only | done | `backend/src/routes/*.ts`; `validates input` tests | same | |
 | Audit trail of logins, orders and cancels | done | `audit_log` table; `refresh_reuse` check in `auth.test.ts` | same | |
-| Integration tests against real Postgres and Redis | done | `backend/test/harness.ts`; `.github/workflows/backend.yml` | same | 33 tests |
+| Integration tests against real Postgres and Redis | done | `backend/test/harness.ts`; `.github/workflows/backend.yml` | same | 50 tests |
 | Redis pub/sub fan-out to WebSocket servers | planned (day 6-7) | | | |
 | [X] ms WebSocket delay | planned (day 6-7) | | | |
 | [X] ms p99 end-to-end under load (500 users + 50 bots) | planned (day 11) | | | |
 
+## Ledger and leagues (TypeScript)
+
+| Claim | Status | Proof | Re-check it | Measured |
+|---|---|---|---|---|
+| Cash, positions and profit/loss per portfolio, updated in the same transaction as each fill | done | `backend/src/ledger.ts` (`applyFill`), `backend/src/orders.ts`; `ledger.test.ts` (`charges commission on fills...`) | `cd backend && npx vitest run test/ledger.test.ts` | |
+| Every balance can be rebuilt from the append-only fill history | done | `rebuild()` in `ledger.ts`; `ledger.test.ts` (`rebuilds every balance from fills after a run of random trades`) | same | 60 random trades between 4 traders, cash and every position match the replay exactly |
+| Pre-trade checks: buying power with open orders reserved | done | `checkOrder()` in `ledger.ts`; `buying power` tests | same | |
+| Short selling with margin | done | same; `holds margin against shorts` | same | 150% Reg T style by default (sale proceeds + 50%), set per league |
+| Leagues with invite codes, custom dates and starting cash | done | `backend/src/routes/leagues.ts`; `leagues` tests | same | |
+| League rules: commissions, position limits, allowed order types, shorting on/off | done | `002_ledger.sql`, `checkOrder()`; `enforces the league's rules`, `charges commission on fills` | same | |
+| Live leaderboard by return, refreshed every second, in Redis sorted sets | done | `backend/src/leaderboard.ts`; `leaderboard` test | same | 1 s refresh |
+| Sharpe ratio leaderboard | done | `sharpeRatio()` in `leaderboard.ts` (checked against a hand calculation); `ranks ... by Sharpe` test | same | annualized from 1-minute equity snapshots, risk-free rate 0 |
+| Max drawdown, win rate, return chart | planned (day 8) | | | |
+| Assignments and grading | planned (day 9) | | | |
+
 ## Still to come
 
-Ledger, leagues, leaderboards (day 6); trading UI (days 7-8); classroom tools, badges and the bot API (day 9); fair-play detection and the AI coach (day 10); load tests and security scans (day 11); AWS deploy (day 12). Rows get added here as each one lands.
+Trading UI (days 7-8); classroom tools, badges and the bot API (day 9); fair-play detection and the AI coach (day 10); load tests and security scans (day 11); AWS deploy (day 12). Rows get added here as each one lands.

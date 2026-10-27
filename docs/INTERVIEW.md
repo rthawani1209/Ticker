@@ -4,7 +4,7 @@ How to explain Ticker out loud. Each answer gives what it is, why it was done th
 
 ## The 30-second version
 
-"Ticker is a stock market simulator for student trading competitions. Most practice apps copy real prices, so your orders never move anything. I built a real exchange in C++ that matches orders in about 200 nanoseconds, plus bots and a news engine in Python so the market moves on its own, and a TypeScript gateway that handles logins and turns JSON orders into a compact binary protocol."
+"Ticker is a stock market simulator for student trading competitions. Most practice apps copy real prices, so your orders never move anything. I built a real exchange in C++ that matches orders in about 200 nanoseconds, plus bots and a news engine in Python so the market moves on its own, and a TypeScript gateway and ledger that handles logins, leagues with their own rules, margin for short selling, and a live leaderboard."
 
 ## Likely questions
 
@@ -47,9 +47,27 @@ argon2id password hashes (slow on purpose, and memory-hard so GPU cracking is ex
 **What happens if the gateway loses its connection to the engine?**
 It reconnects with backoff and asks for fresh snapshots of every book. Orders that were waiting for an answer when the connection dropped are marked rejected after the timeout. If the engine did take one, its next fill carries our order id and the gateway reattaches it. The known gap: fills that happen while disconnected are missed. The fix is to number the engine's output and replay from the last number seen. That's on the plan.
 
+**How do you stop a student spending the same money twice?**
+Before an order goes to the exchange, the gateway locks that portfolio's row in Postgres, checks buying power, and saves the order as pending, all in one transaction. A second order from the same portfolio waits for the lock, and then sees the first one as money already reserved. Buying power is cash minus what open buy orders could cost minus the margin held against shorts.
+*Trade-off:* orders from one portfolio are checked one at a time. That's fine at human speed. Different portfolios don't block each other.
+
+**How does short selling work?**
+Selling shares you don't have puts the sale money into your cash and gives you a negative position. To make sure you can buy them back if the price rises, you must keep 150% of the short's value: the proceeds plus 50% of your own money (like Reg T in the US). Leagues can change that, or turn shorting off.
+
+**How do you compute profit and loss?**
+Average cost. Each position stores its quantity and total cost. Buying more adds to both. Selling part of it takes out its share of the cost at the average, and the difference between the sale price and that average is realized profit. Unrealized profit is the current value minus the remaining cost. Commissions are taken off realized profit too.
+
+**How do you know the balances are right?**
+Fills are append-only and every balance is derived from them. There's a pure function that replays a portfolio's fills from its starting cash, and a test runs 60 random trades between four traders and checks the live cash and every position against the replay, to the cent. Each fill updates cash and positions in the same database transaction that inserts it, and a duplicate fill (same trade id) is skipped before anything moves.
+
+**How does the leaderboard update every second?**
+A timer values every portfolio in one SQL query (cash plus quantity times the last price, summed per portfolio) and writes the returns into a Redis sorted set per league. Sorted sets keep members ordered by score, so the top 50 is one `ZREVRANGE`. Every minute the values are also saved, and the Sharpe ratio is computed from those snapshots: the average return per minute divided by its standard deviation, scaled up to a year. Higher means steadier gains, not just bigger bets.
+*Follow-up: why not just sort in Postgres?* You could at this size. Redis keeps the reads cheap when many browsers poll the board, and several gateway instances share one ranking.
+
 ## Do this yourself (about an hour)
 
 1. Build and run the tests: `cmake -S engine -B engine/build && cmake --build engine/build -j && ctest --test-dir engine/build`.
 2. Read `BookTest.PriceThenTimePriority` and `BookTest.ReplaceDownKeepsPriority` in `engine/tests/order_book_test.cpp`, then work through the same orders on paper.
 3. Run `scripts/bench.sh` and compare your numbers with `docs/results/`.
-4. Start the engine and the bots (`market-sim/README.md`), run the `flash-crash` scenario, and explain what the bots, the halt and the prices do.
+4. Read `backend/test/ledger.test.ts`, especially the commission test, and check its numbers by hand.
+5. Start the engine and the bots (`market-sim/README.md`), run the `flash-crash` scenario, and explain what the bots, the halt and the prices do.

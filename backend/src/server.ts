@@ -6,6 +6,7 @@ import { loadConfig } from "./config.js";
 import { migrate } from "./db/migrate.js";
 import { createPool } from "./db/pool.js";
 import { EngineBridge } from "./engine/bridge.js";
+import { Leaderboard } from "./leaderboard.js";
 import { OrderService } from "./orders.js";
 import { loadSymbols } from "./symbols.js";
 
@@ -22,9 +23,10 @@ const bridge = new EngineBridge({
   refPrices: symbols.map((s) => s.refPrice),
 });
 const orders = new OrderService(db, bridge);
+const leaderboard = new Leaderboard(db, orders.marks, symbols.map((s) => s.id), redis, config.SNAPSHOT_INTERVAL_S);
 const app = await buildApp(
   {
-    config, db, redis, bridge, orders,
+    config, db, redis, bridge, orders, leaderboard,
     tokens: new Tokens(config.JWT_SECRET, db),
     symbols,
     symbolsByTicker: new Map(symbols.map((s) => [s.ticker, s])),
@@ -44,10 +46,12 @@ bridge.start().catch((err) => {
 });
 
 await app.listen({ host: config.HOST, port: config.PORT });
+leaderboard.start();
 
 for (const sig of ["SIGINT", "SIGTERM"] as const) {
   process.on(sig, async () => {
     bridge.stop();
+    leaderboard.stop();
     await app.close();
     await db.end();
     redis?.disconnect();

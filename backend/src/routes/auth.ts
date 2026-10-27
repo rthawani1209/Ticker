@@ -41,9 +41,16 @@ export default async function authRoutes(app: FastifyInstance) {
   app.post("/register", { config: authLimit }, async (req, reply) => {
     const body = Register.parse(req.body);
     const hash = await hashPassword(body.password);
+    // New users start with a portfolio in the practice league.
     const { rows } = await db.query(
-      `INSERT INTO users (email, username, password_hash) VALUES ($1, $2, $3)
-       ON CONFLICT DO NOTHING RETURNING id, username, role`,
+      `WITH u AS (
+         INSERT INTO users (email, username, password_hash) VALUES ($1, $2, $3)
+         ON CONFLICT DO NOTHING RETURNING id, username, role
+       ), p AS (
+         INSERT INTO portfolios (league_id, user_id, cash)
+         SELECT l.id, u.id, l.starting_cash FROM leagues l, u WHERE l.is_practice
+       )
+       SELECT * FROM u`,
       [body.email, body.username, hash],
     );
     const user = rows[0];

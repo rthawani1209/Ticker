@@ -16,7 +16,7 @@ Everything that trades goes through the same door. Browsers and student bots use
 | Part | Language | Job |
 |---|---|---|
 | `engine/` | C++20 | The exchange. Keeps the order books, matches orders, enforces price bands and halts, and writes every input to a journal. Knows nothing about users or money. |
-| `backend/` | TypeScript (Node, Fastify) | The gateway. Logins, the REST and WebSocket APIs, rate limits, and turning JSON orders into the engine's binary messages. Stores orders and fills in Postgres. |
+| `backend/` | TypeScript (Node, Fastify) | The gateway and the ledger. Logins, the REST and WebSocket APIs, rate limits, and turning JSON orders into the engine's binary messages. Keeps orders, fills, cash, positions and leagues in Postgres, and live rankings in Redis. |
 | `market-sim/` | Python (asyncio) | Bots and news, so the market is alive even with nobody logged in. |
 | `frontend/` | Next.js | The trading app (coming, days 7-8). |
 
@@ -46,10 +46,21 @@ Everything that trades goes through the same door. Browsers and student bots use
 - **Live data.** WebSocket channels for the book, trades, halts and your own orders.
 - **Limits.** Per-IP login limits and per-user order limits, kept in Redis so they hold across several gateway instances.
 
+## The ledger
+
+The engine only knows accounts and orders. Money lives in the ledger (`backend/src/ledger.ts`).
+
+- **Leagues and portfolios.** Each user gets one portfolio per league they're in, and everyone is in the "Practice" league. A portfolio's id is the account the engine sees. So the same student in two leagues is two separate accounts on the exchange, with separate cash and positions, and all leagues still trade in the same market.
+- **Every fill moves money in the same transaction that records it.** The fill row is inserted first (and skipped if it's a duplicate), then cash and the position are updated. Positions use average cost: buying adds to the cost basis, and selling moves the difference between the sale price and the average cost into realized profit. Commission comes off cash and off realized profit.
+- **Fills are the source of truth.** `rebuild()` replays a portfolio's fills from its starting cash, and a test runs 60 random trades and checks that the live tables match the replay to the cent.
+- **Pre-trade checks** run with the portfolio row locked (`SELECT ... FOR UPDATE`), so two orders sent at once can't both spend the same cash. The order is saved as `pending` in that same transaction, so the next order sees it as reserved. Checks, in order: the league is running, the order type is allowed, the position limit, shorting allowed, then buying power.
+- **Buying power** = cash - what open buy orders could spend - margin held against shorts. Shorting puts the sale proceeds into cash, so a short worth V needs the proceeds plus 50% more (150% total, set per league). Market and stop orders are valued at the highest of the stop price, the last trade and the best ask, which errs on the safe side.
+- **Leaderboard.** Every second, each portfolio in a running league is valued at the last traded prices in one SQL query, and its return goes into a Redis sorted set (`lb:<league>:return`). Every minute those values are also saved as equity snapshots, and the Sharpe ratio (mean over standard deviation of the snapshot-to-snapshot returns, annualized) goes into `lb:<league>:sharpe`. Without Redis it falls back to memory.
+
 ## The market simulator
 
 Each company has a hidden "true value" that drifts randomly and jumps when news comes out. Market makers quote around a lagged estimate of it. News traders react to headlines within a few seconds. Momentum traders chase trends and protect themselves with stop orders. Noise traders add random flow. Scenario files script events like a fraud allegation that triggers a crash and trips the circuit breaker.
 
 ## Data
 
-Postgres tables so far: `users`, `refresh_tokens`, `symbols`, `orders`, `fills` (append-only), `audit_log`. A user's id is also their account number on the exchange; bots use 900001 and up.
+Postgres tables so far: `users`, `refresh_tokens`, `symbols`, `leagues`, `portfolios`, `positions`, `orders`, `fills` (append-only), `equity_snapshots`, `audit_log`. A portfolio's id is its account number on the exchange; bots use 900001 and up. Redis holds rate-limit counters and the live leaderboards.

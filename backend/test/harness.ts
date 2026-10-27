@@ -13,6 +13,7 @@ import { loadConfig } from "../src/config.js";
 import { migrate } from "../src/db/migrate.js";
 import { createPool } from "../src/db/pool.js";
 import { EngineBridge } from "../src/engine/bridge.js";
+import { Leaderboard } from "../src/leaderboard.js";
 import { OrderService } from "../src/orders.js";
 import { loadSymbols } from "../src/symbols.js";
 
@@ -52,8 +53,10 @@ export async function startBackend() {
 
   const redis = process.env.REDIS_URL ? new Redis(process.env.REDIS_URL) : undefined;
   if (redis) await redis.flushdb();
+  // Tests call leaderboard.refresh() themselves instead of running the timer.
+  const leaderboard = new Leaderboard(db, orders.marks, symbols.map((s) => s.id), redis, 60);
   const app = await buildApp({
-    config, db, redis, bridge, orders,
+    config, db, redis, bridge, orders, leaderboard,
     tokens: new Tokens(config.JWT_SECRET, db),
     symbols,
     symbolsByTicker: new Map(symbols.map((s) => [s.ticker, s])),
@@ -61,7 +64,7 @@ export async function startBackend() {
   await app.ready();
 
   return {
-    app, db, bridge, orders, engine,
+    app, db, bridge, orders, leaderboard, engine,
     async stop() {
       bridge.stop();
       await app.close();
@@ -75,16 +78,25 @@ export async function startBackend() {
 export type Backend = Awaited<ReturnType<typeof startBackend>>;
 
 let n = 0;
+let signUps = 0;
 export async function signUp(b: Backend, name = `user${++n}_${process.pid}`) {
+  const k = ++signUps;
   const res = await b.app.inject({
     method: "POST",
     url: "/v1/auth/register",
+    // A different address per sign-up, so test files can make more than 10 users a minute.
+    remoteAddress: `10.1.${(k >> 8) & 255}.${k & 255}`,
     payload: { email: `${name}@example.com`, username: name, password: "correct horse battery" },
   });
   if (res.statusCode !== 201) throw new Error(`register failed: ${res.body}`);
   const body = res.json();
   const cookie = res.cookies.find((c) => c.name === "ticker_rt")!.value;
-  return { id: body.user.id as number, token: body.accessToken as string, cookie, name };
+  // The practice portfolio's id is the account the engine sees for this user.
+  const { rows } = await b.db.query(
+    "SELECT p.id FROM portfolios p JOIN leagues l ON l.id = p.league_id WHERE l.is_practice AND p.user_id = $1",
+    [body.user.id],
+  );
+  return { id: body.user.id as number, portfolio: rows[0].id as number, token: body.accessToken as string, cookie, name };
 }
 
 export const auth = (token: string) => ({ authorization: `Bearer ${token}` });
