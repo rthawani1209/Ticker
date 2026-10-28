@@ -111,12 +111,24 @@ export interface Marks {
   bestAsk(symbolId: number): number | undefined;
 }
 
-// What an order is assumed to trade at for buying-power purposes. Limit orders can't
-// do worse than their limit; market and stop orders use the higher of the stop, the
-// last trade and the best ask, which is conservative for buys and for shorts alike.
-export function estimatePrice(o: { type: string; price?: number | null; stopPrice?: number | null; symbolId: number }, marks: Marks) {
+// The engine's price band (engine/include/ticker/config.hpp): market orders sweep at
+// most this far from the last trade.
+export const PRICE_BAND_BPS = 1000;
+
+// What an order is assumed to trade at for buying-power purposes: the worst price it
+// can actually reach. A limit order can't do worse than its limit. A market buy can
+// walk the book up to the band ceiling, so it's reserved there (a stop becomes a
+// market order once it triggers, at or above its stop price). Sells and shorts use
+// the higher of the stop, the last trade and the best ask, which overstates the
+// value of a short and so errs on the side of more margin.
+export function estimatePrice(
+  o: { type: string; side: string; price?: number | null; stopPrice?: number | null; symbolId: number },
+  marks: Marks,
+) {
   if (o.type === "limit" || o.type === "stop_limit") return o.price!;
-  return Math.max(o.stopPrice ?? 0, marks.last(o.symbolId), marks.bestAsk(o.symbolId) ?? 0);
+  const ref = Math.max(o.stopPrice ?? 0, marks.last(o.symbolId));
+  if (o.side === "buy") return ref + Math.floor((ref * PRICE_BAND_BPS) / 10_000);
+  return Math.max(ref, marks.bestAsk(o.symbolId) ?? 0);
 }
 
 // Pre-trade checks for a new order. The caller holds the portfolio row locked
@@ -151,7 +163,7 @@ export async function checkOrder(
   const openBuys = new Map<number, number>();
   const openSells = new Map<number, number>();
   for (const r of open.rows) {
-    const px = estimatePrice({ type: r.type, price: r.price, stopPrice: r.stop_price, symbolId: r.symbol_id }, marks);
+    const px = estimatePrice({ type: r.type, side: r.side, price: r.price, stopPrice: r.stop_price, symbolId: r.symbol_id }, marks);
     if (r.side === "buy") {
       reserved += r.leaves * px;
       openBuys.set(r.symbol_id, (openBuys.get(r.symbol_id) ?? 0) + r.leaves);

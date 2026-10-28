@@ -1,6 +1,9 @@
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it } from "vitest";
 
 import * as p from "../src/engine/protocol.js";
+import { PRICE_BAND_BPS } from "../src/ledger.js";
 
 describe("engine protocol", () => {
   it("lays out a new order like the C++ struct", () => {
@@ -56,5 +59,15 @@ describe("engine protocol", () => {
 
   it("rejects garbage", () => {
     expect(() => p.split(Buffer.from([0xff, 0xff, 1, 1]))).toThrow(p.ProtocolError);
+  });
+});
+
+describe("engine config", () => {
+  it("uses the same price band as the engine", () => {
+    // The ledger reserves market orders at the band edge, so the two must agree.
+    const header = readFileSync(new URL("../../engine/include/ticker/config.hpp", import.meta.url), "utf8");
+    const m = /band_bps = ([\d']+);/.exec(header);
+    expect(m, "band_bps not found in config.hpp").not.toBeNull();
+    expect(PRICE_BAND_BPS).toBe(Number(m![1]!.replaceAll("'", "")));
   });
 });

@@ -118,6 +118,32 @@ describe("buying power", () => {
   });
 });
 
+describe("market orders", () => {
+  it("reserve cash at the price band, so sweeping a thin book can't overdraw", async () => {
+    const [seller, buyer] = [await signUp(b), await signUp(b)];
+    // HELX last traded at $58.00. One cheap share level, then a wall at $63.
+    const cheap = await place(seller, { symbol: "HELX", side: "sell", price: 58_00, qty: 10 });
+    const wall = await place(seller, { symbol: "HELX", side: "sell", price: 63_00, qty: 2000 });
+    expect(wall.statusCode).toBe(201);
+
+    // 1700 shares looks like $98,600 at the best ask but would really cost about $106,500.
+    // Reserved at the band ceiling ($63.80) it needs $108,460, more than the $100,000 there is.
+    const big = await place(buyer, { symbol: "HELX", side: "buy", type: "market", qty: 1700 });
+    expect(big.statusCode).toBe(422);
+    expect(big.json().error).toBe("insufficient_funds");
+
+    const ok = await place(buyer, { symbol: "HELX", side: "buy", type: "market", qty: 1500 });
+    expect(ok.json()).toMatchObject({ status: "filled", filledQty: 1500 });
+    await b.orders.settled();
+    const after = (await get(buyer, "/v1/positions")).json();
+    expect(after.cash).toBe(100_000_00 - 10 * 58_00 - 1490 * 63_00);
+    expect(after.cash).toBeGreaterThanOrEqual(0);
+
+    expect(cheap.json().status).toBe("open");
+    await b.app.inject({ method: "DELETE", url: `/v1/orders/${wall.json().id}`, headers: auth(seller.token) });
+  });
+});
+
 describe("leagues", () => {
   let owner: User;
   let member: User;
