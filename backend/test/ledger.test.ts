@@ -215,6 +215,26 @@ describe("leagues", () => {
   });
 });
 
+describe("self-trade prevention", () => {
+  it("stops one person's portfolios in different leagues from trading with each other", async () => {
+    const [owner, other] = [await signUp(b), await signUp(b)];
+    const league = (await post(owner, "/v1/leagues", { name: "Wash trade check" })).json();
+
+    // Selling cheap from practice and buying in the league would move money between them.
+    const practiceSell = await place(owner, { symbol: "BRKL", side: "sell", price: 70_00, qty: 100 });
+    expect(practiceSell.json().status).toBe("open");
+    const leagueBuy = await place(owner, { symbol: "BRKL", side: "buy", price: 70_00, qty: 100, league: league.id, tif: "ioc" });
+    expect(leagueBuy.statusCode).toBe(201);
+    expect(leagueBuy.json()).toMatchObject({ status: "cancelled", filledQty: 0, rejectReason: "self_trade" });
+
+    // Someone else can still take the order.
+    const fair = await place(other, { symbol: "BRKL", side: "buy", price: 70_00, qty: 100 });
+    expect(fair.json().status).toBe("filled");
+    await b.orders.settled();
+    expect((await get(owner, `/v1/positions?league=${league.id}`)).json()).toMatchObject({ cash: 100_000_00, positions: [] });
+  });
+});
+
 describe("fill history", () => {
   it("rebuilds every balance from fills after a run of random trades", async () => {
     const traders = [await signUp(b), await signUp(b), await signUp(b), await signUp(b)];

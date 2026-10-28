@@ -141,7 +141,7 @@ void OrderBook::on_new(const Command& cmd, std::vector<Event>& out) {
 
     if (is_stop) return add_stop(cmd, id, out);
 
-    Incoming in{id,       cmd.cl_ord_id, cmd.session, cmd.account,
+    Incoming in{id,       cmd.cl_ord_id, cmd.session, cmd.account, stp_group(cmd),
                 cmd.side, has_limit ? cmd.price : market_limit(cmd.side), cmd.qty,
                 cmd.ord_type == OrdType::Limit && cmd.tif == TIF::GTC,
                 cmd.tif == TIF::FOK};
@@ -172,7 +172,7 @@ void OrderBook::add_stop(const Command& cmd, OrderId id, std::vector<Event>& out
         out.push_back(e);
         return;
     }
-    *o = Order{id,         cmd.cl_ord_id, cmd.price, cmd.stop_price, cmd.qty, cmd.account, cmd.session,
+    *o = Order{id,         cmd.cl_ord_id, cmd.price, cmd.stop_price, cmd.qty, cmd.account, cmd.session, stp_group(cmd),
                cmd.side,   cmd.ord_type,  cmd.tif,   true,           nullptr, nullptr};
     link_stop(o);
     by_id_.insert(id, o);
@@ -210,7 +210,7 @@ void OrderBook::run_stops(std::vector<Event>& out) {
         out.push_back(e);
 
         const bool limit = o->type == OrdType::StopLimit;
-        Incoming in{o->id,   o->cl_ord_id, o->session, o->account,
+        Incoming in{o->id,   o->cl_ord_id, o->session, o->account, o->stp,
                     o->side, limit ? o->price : market_limit(o->side), o->qty,
                     limit && o->tif == TIF::GTC,
                     o->tif == TIF::FOK};
@@ -230,7 +230,7 @@ bool OrderBook::fok_fillable(const Incoming& in) const {
         if (trips_breaker(p)) return false;
         for (const Order* o = lv[p].head; o; o = o->next) {
             // Matching stops at our own order, so liquidity behind it doesn't count.
-            if (o->account == in.account) return false;
+            if (o->stp == in.stp) return false;
             have += o->qty;
             if (have >= in.qty) return true;
         }
@@ -275,7 +275,7 @@ void OrderBook::execute(const Incoming& in, std::vector<Event>& out) {
         Level& level = opp_levels[best];
         Order* o = level.head;
         while (o && remaining > 0) {
-            if (o->account == in.account) {
+            if (o->stp == in.stp) {
                 self_trade = true;
                 break;
             }
@@ -337,7 +337,7 @@ void OrderBook::execute(const Incoming& in, std::vector<Event>& out) {
 
     Order* o = pool_.acquire();
     if (!o) return cancelled(CancelReason::BookFull, remaining);
-    *o = Order{in.id,   in.cl_ord_id,   in.limit, 0,     remaining, in.account, in.session,
+    *o = Order{in.id,   in.cl_ord_id,   in.limit, 0,     remaining, in.account, in.session, in.stp,
                in.side, OrdType::Limit, TIF::GTC, false, nullptr,   nullptr};
     link(o);
     by_id_.insert(o->id, o);
@@ -410,7 +410,7 @@ void OrderBook::on_replace(const Command& cmd, std::vector<Event>& out) {
         return;
     }
 
-    Incoming in{o->id, cmd.cl_ord_id, o->session, o->account, o->side, cmd.price, cmd.qty, true, false};
+    Incoming in{o->id, cmd.cl_ord_id, o->session, o->account, o->stp, o->side, cmd.price, cmd.qty, true, false};
     const Price old_price = o->price;
     unlink(o);
     by_id_.erase(o->id);

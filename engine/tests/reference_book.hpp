@@ -62,6 +62,7 @@ private:
         AccountId account;
         SessionId session;
         Side side;
+        std::uint32_t stp;
     };
     using Queue = std::list<Order>;
 
@@ -181,7 +182,8 @@ private:
         ack.leaves = c.qty;
         out.push_back(ack);
 
-        Order o{id, c.cl_ord_id, has_limit ? c.price : market_limit(c.side), c.qty, c.account, c.session, c.side};
+        Order o{id,     c.cl_ord_id, has_limit ? c.price : market_limit(c.side), c.qty, c.account, c.session,
+                c.side, c.stp_group ? c.stp_group : c.account};
         if (is_stop) {
             if (order_count() >= cfg_.max_orders) {
                 Event e{};
@@ -271,7 +273,7 @@ private:
                 if (!crosses(in.side, in.price, p) || blocked || have >= in.qty) break;
                 if (trips(p)) break;
                 for (auto& o : book[p]) {
-                    if (o.account == in.account) {
+                    if (o.stp == in.stp) {
                         blocked = true;
                         break;
                     }
@@ -292,7 +294,7 @@ private:
             Queue& q = book[p];
             while (!q.empty() && in.qty > 0) {
                 Order& rest = q.front();
-                if (rest.account == in.account) {
+                if (rest.stp == in.stp) {
                     self_trade = true;
                     break;
                 }

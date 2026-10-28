@@ -73,7 +73,7 @@ struct NewOrder {
     Price price;
     Price stop_price;
     Qty qty;
-    std::uint32_t pad2;
+    std::uint32_t stp_group;  // 0 = the account; see Command::stp_group
 };
 
 struct Cancel {

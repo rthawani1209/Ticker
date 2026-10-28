@@ -19,7 +19,7 @@ Each type has exactly one valid length. A header with an unknown type, wrong len
 | Type | Name      | Size | Fields after the header |
 |------|-----------|------|-------------------------|
 | 1    | Logon     | 24   | account u32, flags u32, pad u32, token u64 |
-| 2    | NewOrder  | 48   | account u32, cl_ord_id u64, symbol u32, side u8, ord_type u8, tif u8, pad u8, price i64, stop_price i64, qty u32, pad u32 |
+| 2    | NewOrder  | 48   | account u32, cl_ord_id u64, symbol u32, side u8, ord_type u8, tif u8, pad u8, price i64, stop_price i64, qty u32, stp_group u32 |
 | 3    | Cancel    | 32   | account u32, cl_ord_id u64, order_id u64, symbol u32, pad u32 |
 | 4    | Replace   | 40   | account u32, cl_ord_id u64, order_id u64, symbol u32, qty u32, price i64 |
 | 5    | Subscribe | 8    | symbol u32 |

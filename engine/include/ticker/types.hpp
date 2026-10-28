@@ -62,7 +62,10 @@ struct Command {
     Price price{};
     Price stop_price{};
     Qty qty{};
-    std::uint32_t pad{};
+    // Orders with the same nonzero group never trade with each other (self-trade
+    // prevention across accounts, e.g. one student's portfolios in different leagues).
+    // Zero means the account is the group.
+    std::uint32_t stp_group{};
     // Set by the gateway when the command arrives. The engine never reads a clock,
     // so replaying a journal gives the same result.
     std::uint64_t ts{};

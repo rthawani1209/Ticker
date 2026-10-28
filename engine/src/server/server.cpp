@@ -291,7 +291,10 @@ void Server::on_message(Connection& c, const wire::Header& h, const std::uint8_t
             cmd.price = m.price;
             cmd.stop_price = m.stop_price;
             cmd.qty = m.qty;
-            if (proxy) cmd.account = m.account;
+            if (proxy) {
+                cmd.account = m.account;
+                cmd.stp_group = m.stp_group;
+            }
             break;
         }
         case MsgType::Cancel: {

@@ -180,6 +180,24 @@ TEST_F(BookTest, SelfTradePreventionCancelsIncoming) {
     EXPECT_EQ(book.best_bid(), 0);
 }
 
+TEST_F(BookTest, SelfTradePreventionCoversAGroupOfAccounts) {
+    // Accounts 7 and 8 are one person (say, two league portfolios); 9 is someone else.
+    auto in_group = [](Command c) {
+        c.stp_group = 500;
+        return c;
+    };
+    send(in_group(limit(Side::Sell, 1000, 5, 7)));
+    auto evs = send(in_group(limit(Side::Buy, 1000, 5, 8)));
+    EXPECT_TRUE(of_type(evs, EventType::Fill).empty());
+    auto c = of_type(evs, EventType::Cancelled);
+    ASSERT_EQ(c.size(), 1u);
+    EXPECT_EQ(c[0].reason, std::uint8_t(CancelReason::SelfTrade));
+    EXPECT_EQ(c[0].account, 8u);
+
+    // Someone outside the group still trades with the resting order.
+    EXPECT_EQ(of_type(send(limit(Side::Buy, 1000, 5, 9)), EventType::Fill).size(), 2u);
+}
+
 TEST_F(BookTest, Rejects) {
     EXPECT_EQ(send(limit(Side::Buy, 1000, 0)).at(0).reason, std::uint8_t(RejectReason::InvalidQty));
     EXPECT_EQ(send(limit(Side::Buy, 1000, 10'001)).at(0).reason, std::uint8_t(RejectReason::MaxQtyExceeded));

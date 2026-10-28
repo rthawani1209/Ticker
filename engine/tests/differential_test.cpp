@@ -2,6 +2,7 @@
 // requires byte-identical output. Set TICKER_FUZZ_COMMANDS to run longer.
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cstdlib>
 #include <random>
 #include <sstream>
@@ -24,7 +25,8 @@ std::string describe(const Event& e) {
     return s.str();
 }
 
-void run(std::uint64_t seed, std::size_t commands, const SymbolConfig& cfg, std::size_t min_trade_ratio = 20) {
+void run(std::uint64_t seed, std::size_t commands, const SymbolConfig& cfg, std::size_t min_trade_ratio = 20,
+         bool grouped = false) {
     OrderBook fast(0, cfg);
     ReferenceBook ref(0, cfg);
     OrderFlow gen(seed, cfg);
@@ -33,6 +35,8 @@ void run(std::uint64_t seed, std::size_t commands, const SymbolConfig& cfg, std:
 
     for (std::size_t i = 0; i < commands; ++i) {
         Command c = gen.next();
+        // Accounts 3-4 and 5-6 each belong to one person, so they must not trade with each other.
+        if (grouped && c.type == CmdType::New && c.account >= 3) c.stp_group = 1000 + (c.account - 1) / 2;
         a.clear();
         b.clear();
         fast.process(c, a);
@@ -95,4 +99,14 @@ TEST(Differential, WideBandLowPrices) {
     cfg.band_bps = 9000;
     cfg.circuit_bps = 0;  // one tick is 2.5% here, the breaker would never stay open
     for (std::uint64_t seed = 200; seed <= 204; ++seed) run(seed, budget(40'000), cfg);
+}
+
+// Self-trade prevention across accounts that share a group. Blocked orders pile up on
+// the book here, which makes the reference book slow, so this suite stays short even
+// in the long CI run.
+TEST(Differential, GroupedAccounts) {
+    SymbolConfig cfg;
+    cfg.max_price = 1 << 14;
+    cfg.ref_price = 5000;
+    for (std::uint64_t seed = 400; seed <= 404; ++seed) run(seed, std::min<std::size_t>(budget(40'000), 40'000), cfg, 20, true);
 }

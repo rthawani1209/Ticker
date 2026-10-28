@@ -45,6 +45,7 @@ private:
         Qty qty;      // open quantity
         AccountId account;
         SessionId session;
+        std::uint32_t stp;  // self-trade prevention group
         Side side;
         OrdType type;
         TIF tif;
@@ -64,6 +65,7 @@ private:
         std::uint64_t cl_ord_id;
         SessionId session;
         AccountId account;
+        std::uint32_t stp;
         Side side;
         Price limit;
         Qty qty;
@@ -85,6 +87,7 @@ private:
     void add_stop(const Command& cmd, OrderId id, std::vector<Event>& out);
     void run_stops(std::vector<Event>& out);
     Price market_limit(Side side) const;
+    static std::uint32_t stp_group(const Command& cmd) { return cmd.stp_group ? cmd.stp_group : cmd.account; }
 
     void link(Order* o);
     void unlink(Order* o);

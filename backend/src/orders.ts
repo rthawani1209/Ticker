@@ -145,6 +145,9 @@ export class OrderService extends EventEmitter {
       price: input.price ?? 0,
       stopPrice: input.stopPrice ?? 0,
       qty: input.qty,
+      // All of one user's portfolios share a self-trade group, so nobody can move
+      // money from one league to another by trading with themselves.
+      stpGroup: userId,
     });
     // The ack/reject is applied through the event queue; wait for it so the
     // response shows the order as the engine left it (including any instant fills).

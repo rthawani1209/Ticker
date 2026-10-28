@@ -112,6 +112,8 @@ export interface NewOrderFields {
   price: number;
   stopPrice: number;
   qty: number;
+  // Orders in the same nonzero group never trade with each other; 0 means just this account.
+  stpGroup?: number;
 }
 
 export function newOrder(o: NewOrderFields): Buffer {
@@ -125,6 +127,7 @@ export function newOrder(o: NewOrderFields): Buffer {
   b.writeBigInt64LE(BigInt(o.price), 24);
   b.writeBigInt64LE(BigInt(o.stopPrice), 32);
   b.writeUInt32LE(o.qty, 40);
+  b.writeUInt32LE(o.stpGroup ?? 0, 44);
   return b;
 }
 
