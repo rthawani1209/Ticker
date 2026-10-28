@@ -1,0 +1,27 @@
+.cell {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  padding: 0 var(--s-1);
+}
+
+.up {
+  animation: flash-up var(--t-flash) ease-out;
+}
+
+.down {
+  animation: flash-down var(--t-flash) ease-out;
+}
+
+@keyframes flash-up {
+  from {
+    background: color-mix(in srgb, var(--up) 30%, transparent);
+    color: var(--up);
+  }
+}
+
+@keyframes flash-down {
+  from {
+    background: color-mix(in srgb, var(--down) 30%, transparent);
+    color: var(--down);
+  }
+}

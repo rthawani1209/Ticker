@@ -1,0 +1,69 @@
+/* Signal: Ticker's design tokens. Mockups: https://claude.ai/artifact/XFh157qgGngTnCH5SNKfS8
+   Green and red only ever mean price direction. Amber means "yours": your orders, focus, the next action. */
+
+:root {
+  /* ground and structure */
+  --ink-0: #07090d;
+  --ink-1: #0b0f15;
+  --ink-2: #111722;
+  --line: #1a2230;
+  --line-strong: #27324a;
+  --bracket: #3a475e;
+  --dot: #121925;
+
+  /* text */
+  --text: #e8edf5;
+  --text-2: #9aa6b8;
+  --text-3: #8592a6;
+  --text-body: #c9d2df;
+
+  /* signals */
+  --up: #2fd69c;
+  --down: #ff6b6b;
+  --you: #ffb21f;
+  --info: #5cc8ff;
+  --on-signal: #07090d;
+
+  /* type */
+  --font-display: var(--font-chakra), "Inter Tight", system-ui, sans-serif;
+  --font-ui: var(--font-inter-tight), system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains), ui-monospace, monospace;
+
+  /* space (4 px base) */
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-6: 24px;
+  --s-8: 32px;
+  --s-12: 48px;
+
+  /* motion */
+  --t-fast: 120ms;
+  --t-base: 200ms;
+  --t-flash: 600ms;
+
+  --chamfer: 8px;
+  color-scheme: dark;
+}
+
+/* Light theme: same structure, inverted ground. Signals are darkened to keep 4.5:1 on white. */
+:root[data-theme="light"] {
+  --ink-0: #f6f7f9;
+  --ink-1: #ffffff;
+  --ink-2: #eef1f5;
+  --line: #dde2ea;
+  --line-strong: #c4ccd8;
+  --bracket: #9aa6b8;
+  --dot: #e3e7ee;
+  --text: #0b0f15;
+  --text-2: #4a5568;
+  --text-3: #5b667a;
+  --text-body: #1f2734;
+  --up: #0a7f57;
+  --down: #c62f37;
+  --you: #a36400;
+  --info: #0a6aa8;
+  --on-signal: #ffffff;
+  color-scheme: light;
+}

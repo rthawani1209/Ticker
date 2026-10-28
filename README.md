@@ -3,6 +3,7 @@
 [![engine](https://github.com/rthawani1209/Ticker/actions/workflows/engine.yml/badge.svg)](https://github.com/rthawani1209/Ticker/actions/workflows/engine.yml)
 [![backend](https://github.com/rthawani1209/Ticker/actions/workflows/backend.yml/badge.svg)](https://github.com/rthawani1209/Ticker/actions/workflows/backend.yml)
 [![market-sim](https://github.com/rthawani1209/Ticker/actions/workflows/market-sim.yml/badge.svg)](https://github.com/rthawani1209/Ticker/actions/workflows/market-sim.yml)
+[![frontend](https://github.com/rthawani1209/Ticker/actions/workflows/frontend.yml/badge.svg)](https://github.com/rthawani1209/Ticker/actions/workflows/frontend.yml)
 
 Stock market simulator for student trading competitions, powered by a C++ matching engine.
 
@@ -21,7 +22,7 @@ Ticker/
 │   └── bench/     benchmarks and the latency tool
 ├── backend/       Node.js API gateway: accounts, orders, live market data (leagues and ledger coming)
 ├── market-sim/    Python trading bots, news engine and scenario cases
-├── frontend/      Next.js web app (coming)
+├── frontend/      Next.js web app
 ├── sdk/python/    starter kit for writing your own trading bot (coming)
 ├── infra/         Docker Compose and AWS deploy (coming)
 ├── scripts/       check.sh (runs everything CI runs), bench.sh (writes docs/results/)
@@ -67,3 +68,8 @@ cd market-sim && python -m ticker_sim --token 1234 --scenario flash-crash
 ## Backend
 
 The API in [`backend/`](backend) is how people and student bots reach the exchange: sign-up and login with rotating refresh tokens, a JSON order API that speaks the engine's binary protocol, and WebSocket channels for the order book, trades and your own orders. Orders and fills are stored in Postgres. See [backend/README.md](backend/README.md) for the full API.
+
+## Frontend
+
+The web app in [`frontend/`](frontend) is Next.js with TypeScript and CSS modules, built on "Signal", Ticker's own design tokens (dark instrument-panel look, fixed-width numbers, green and red only for price direction, amber for your own orders). So far it has the landing page with a live read-only market; the trading screen is next. See [frontend/README.md](frontend/README.md).
+

@@ -1,0 +1,295 @@
+.wrap {
+  max-width: 1240px;
+  margin: 0 auto;
+  padding-inline: var(--s-6);
+}
+
+.top {
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--ink-0) 90%, transparent);
+}
+
+.nav {
+  min-height: 64px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-3) 28px;
+}
+
+.nav a {
+  text-decoration: none;
+}
+
+.links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-1) 22px;
+}
+
+.links a {
+  color: var(--text-2);
+}
+
+.links a:hover,
+.signin {
+  color: var(--text);
+}
+
+.grow {
+  flex: 1;
+}
+
+.hero {
+  padding-block: 72px 64px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-12);
+  align-items: center;
+}
+
+.heroText {
+  flex: 1 1 520px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+}
+
+.live {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.pulse {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--up);
+  box-shadow: 0 0 10px var(--up);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.h1 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(44px, 6vw, 80px);
+  font-weight: 600;
+  line-height: 0.95;
+  text-wrap: balance;
+}
+
+.lede {
+  margin: 0;
+  max-width: 560px;
+  font-size: 19px;
+  line-height: 1.55;
+  color: var(--text-2);
+  text-wrap: pretty;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.fine {
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.board {
+  flex: 1 1 460px;
+  min-width: 0;
+}
+
+.band {
+  border-block: 1px solid var(--line);
+  background: color-mix(in srgb, var(--ink-1) 70%, transparent);
+}
+
+.section {
+  padding-block: 80px;
+  display: flex;
+  flex-direction: column;
+  gap: 40px;
+}
+
+.split {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-4) var(--s-12);
+  align-items: flex-end;
+  justify-content: space-between;
+}
+
+.h2 {
+  margin: 0;
+  max-width: 620px;
+  font-family: var(--font-display);
+  font-size: 40px;
+  font-weight: 600;
+  line-height: 1.05;
+}
+
+.body {
+  margin: 0;
+  max-width: 480px;
+  color: var(--text-2);
+  font-size: 16px;
+  line-height: 1.6;
+}
+
+.steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));
+  gap: 1px;
+  background: var(--line);
+  border: 1px solid var(--line);
+}
+
+.steps li {
+  background: var(--ink-0);
+  padding: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.steps h3 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.steps p {
+  margin: 0;
+  color: var(--text-2);
+  line-height: 1.55;
+  font-size: 15px;
+}
+
+.step {
+  font-size: 12px;
+  color: var(--you);
+  text-transform: uppercase;
+}
+
+.feature {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-12);
+}
+
+.featureText {
+  flex: 1 1 400px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.plus {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  color: var(--text-body);
+  font-size: 15px;
+}
+
+.plus li::before {
+  content: "+";
+  margin-right: 12px;
+  font-family: var(--font-mono);
+  color: var(--you);
+}
+
+.rules,
+.code {
+  flex: 1 1 480px;
+  min-width: 0;
+}
+
+.ruleList {
+  margin: 0;
+  font-size: 13px;
+}
+
+.ruleList div {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--s-4);
+  padding: var(--s-3) var(--s-4);
+  border-bottom: 1px solid var(--line);
+}
+
+.ruleList div:last-child {
+  border-bottom: 0;
+}
+
+.ruleList dt {
+  color: var(--text-3);
+}
+
+.ruleList dd {
+  margin: 0;
+}
+
+.code pre {
+  margin: 0;
+  padding: 18px var(--s-4);
+  overflow-x: auto;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--text-body);
+}
+
+.closer {
+  padding-block: 88px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s-6);
+  text-align: center;
+}
+
+.big {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(36px, 5vw, 60px);
+  font-weight: 600;
+  line-height: 1;
+}
+
+.footer {
+  border-top: 1px solid var(--line);
+}
+
+.foot {
+  padding-block: var(--s-6);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-3) var(--s-6);
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.foot a {
+  color: var(--text-2);
+}

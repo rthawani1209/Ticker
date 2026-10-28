@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Run the same builds and tests as CI before pushing.
 # Usage: scripts/check.sh [--fuzz]   (--fuzz adds the 1M-command differential run)
-# clang sanitizer builds need libclang-rt-18-dev (apt install libclang-rt-18-dev); market-sim needs pytest; backend needs
-# Node 20+, Postgres and Redis running locally.
+# clang sanitizer builds need libclang-rt-18-dev (apt install libclang-rt-18-dev); market-sim needs pytest; backend and frontend need
+# Node 22+; backend also needs Postgres and Redis running locally.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -38,6 +38,14 @@ echo "== backend"
     TICKER_ENGINE=../engine/build-check/g++-release/ticker-engine REDIS_URL=${REDIS_URL:-redis://localhost:6379} \
     npx vitest run > ../engine/build-check/vitest.log 2>&1
 ) || { tail -60 engine/build-check/vitest.log; exit 1; }
+
+echo "== frontend"
+(
+  cd frontend
+  [ -d node_modules ] || npm ci --silent
+  npm run -s lint && npm run -s format:check && npm run -s typecheck &&
+    npx vitest run && npm run -s build
+) > engine/build-check/frontend.log 2>&1 || { tail -60 engine/build-check/frontend.log; exit 1; }
 
 if [ "${1:-}" = "--fuzz" ]; then
   echo "== differential fuzz (1M commands per seed)"

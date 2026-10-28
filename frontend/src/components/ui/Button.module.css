@@ -1,0 +1,75 @@
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-2);
+  border: 0;
+  cursor: pointer;
+  text-decoration: none;
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  transition:
+    filter var(--t-fast),
+    box-shadow var(--t-base);
+}
+
+.md {
+  min-height: 44px;
+  padding: 0 var(--s-4);
+  font-size: 13px;
+}
+
+.lg {
+  min-height: 52px;
+  padding: 0 26px;
+  font-size: 15px;
+}
+
+.buy,
+.sell,
+.you {
+  color: var(--on-signal);
+  clip-path: polygon(
+    var(--chamfer) 0,
+    100% 0,
+    100% calc(100% - var(--chamfer)),
+    calc(100% - var(--chamfer)) 100%,
+    0 100%,
+    0 var(--chamfer)
+  );
+}
+
+.buy {
+  background: var(--up);
+}
+
+.sell {
+  background: var(--down);
+}
+
+.you {
+  background: var(--you);
+  box-shadow: 0 0 32px color-mix(in srgb, var(--you) 25%, transparent);
+}
+
+.buy:hover,
+.sell:hover,
+.you:hover {
+  filter: brightness(1.08);
+}
+
+.ghost {
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--line-strong);
+  font-family: var(--font-ui);
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.ghost:hover {
+  border-color: var(--bracket);
+}
