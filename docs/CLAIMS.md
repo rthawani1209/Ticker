@@ -13,13 +13,14 @@ Status: **done** = built and proven; **partial** = built, proof or number still 
 | C++20 limit order book with price-time priority | done | `engine/tests/order_book_test.cpp` (`PriceThenTimePriority`, `SweepsSeveralLevels`, `CancelFromMiddleOfQueue`) | `ctest --test-dir engine/build -R BookTest` | 30 order book tests + 6 circuit breaker tests |
 | Market, limit, stop and stop-limit orders; GTC, IOC, FOK; cancel and cancel/replace | done | `order_book_test.cpp` (`IocNeverRests`, `FokKillsWhenNotFullyFillable`, `StopLimitRestsAfterTrigger`, `ReplaceDownKeepsPriority`...) | same as above | |
 | Self-trade prevention and price bands | done | `SelfTradePreventionCancelsIncoming`, `PriceBandFollowsLastTrade`, `MarketOrderStopsAtPriceBand` | same as above | bands at 10% from the last trade |
+| Self-trade prevention across one person's accounts (no wash trades between their league portfolios) | done | `stp_group` in `types.hpp`/`protocol.hpp`; `BookTest.SelfTradePreventionCoversAGroupOfAccounts`; `Differential.GroupedAccounts` (fuzz with grouped accounts); `backend/test/ledger.test.ts` (`self-trade prevention`) | `ctest --test-dir engine/build -R SelfTrade` and `cd backend && npm test` | |
 | Trading halts and a circuit breaker | done | `BreakerTest.*` in `order_book_test.cpp`; `market-sim/tests/test_engine_integration.py::test_crash_trips_the_circuit_breaker` | `ctest --test-dir engine/build -R BreakerTest` | trips at 15% inside a 5-minute window, halts 5 minutes |
-| Matching throughput | done | [`docs/results/engine-bench-2026-10-27.json`](results/engine-bench-2026-10-27.json) (`MixedFlow/fast`) | `scripts/bench.sh` | **5.2M commands/sec** on one core (mixed flow, one symbol, book only) |
-| Matching latency | done | same file (`latency_ns.reported`) | `scripts/bench.sh` | **p50 205 ns, p99 1.8 µs** per command inside the book |
+| Matching throughput | done | [`docs/results/engine-bench-2026-10-28.json`](results/engine-bench-2026-10-28.json) (`MixedFlow/fast`) | `scripts/bench.sh` | **7.6M commands/sec** on one core (mixed flow, one symbol, book only), 4 vCPU cloud VM, Xeon @ 2.80GHz |
+| Matching latency | done | same file (`latency_ns.reported`) | `scripts/bench.sh` | **p50 143 ns, p99 1.6 µs** per command inside the book |
 | O(1) best-price lookup with a 3-level bitmap | done | `engine/include/ticker/bit_tree.hpp`; `BitTree.MatchesStdSet` | `ctest --test-dir engine/build -R BitTree` | |
-| O(1) cancel (hash map to an intrusive list node) | done | `order_map.hpp`, `order_book.hpp`; `AddCancel` in the bench file | `scripts/bench.sh` | add+cancel 330 ns with 100 resting orders vs 332 ns with 10,000 (reference book: 0.8 µs vs 47 µs) |
+| O(1) cancel (hash map to an intrusive list node) | done | `order_map.hpp`, `order_book.hpp`; `AddCancel` in the bench file | `scripts/bench.sh` | add+cancel 258 ns with 100 resting orders vs 208 ns with 10,000 (reference book: 0.7 µs vs 42 µs) |
 | No heap allocation on the matching path | done | `engine/tests/alloc_test.cpp` (`HotPathDoesNotAllocate`) | `engine/build/alloc_test` | 0 allocations over 300k commands |
-| Differential fuzzing against a simple reference engine | done | `engine/tests/differential_test.cpp`, `reference_book.hpp`; CI job "differential fuzz (long)" | `TICKER_FUZZ_COMMANDS=1000000 engine/build/engine_tests --gtest_filter='Differential*'` | 20M random commands per CI run (4 suites x 5 seeds x 1M), output must match exactly |
+| Differential fuzzing against a simple reference engine | done | `engine/tests/differential_test.cpp`, `reference_book.hpp`; CI job "differential fuzz (long)" | `TICKER_FUZZ_COMMANDS=1000000 engine/build/engine_tests --gtest_filter='Differential*'` | 20M random commands per CI run (4 suites x 5 seeds x 1M) plus 200k with grouped accounts, output must match exactly |
 | ASan, UBSan and TSan in CI | done | `.github/workflows/engine.yml` | `scripts/check.sh` | |
 | Lock-free single-producer/single-consumer ring buffers | done | `spsc_ring.hpp`; `SpscRing.TwoThreadsKeepOrder` under TSan | `ctest --test-dir engine/build -R SpscRing` | |
 | epoll TCP server, one matching thread per shard | done | `engine/src/server/`; `ServerTest.*` | `ctest --test-dir engine/build -R ServerTest` | |
@@ -49,7 +50,7 @@ Status: **done** = built and proven; **partial** = built, proof or number still 
 | Login and order rate limits in Redis | done | `auth.test.ts` (`rate limits login attempts`), `orders.test.ts` (`rate limits order entry per user`) | same | 10 logins/min per IP, 20 orders/s per user |
 | Zod validation on every input, parameterized SQL only | done | `backend/src/routes/*.ts`; `validates input` tests | same | |
 | Audit trail of logins, orders and cancels | done | `audit_log` table; `refresh_reuse` check in `auth.test.ts` | same | |
-| Integration tests against real Postgres and Redis | done | `backend/test/harness.ts`; `.github/workflows/backend.yml` | same | 50 tests |
+| Integration tests against real Postgres and Redis | done | `backend/test/harness.ts`; `.github/workflows/backend.yml` | same | 53 tests |
 | Redis pub/sub fan-out to WebSocket servers | planned (day 6-7) | | | |
 | [X] ms WebSocket delay | planned (day 6-7) | | | |
 | [X] ms p99 end-to-end under load (500 users + 50 bots) | planned (day 11) | | | |
@@ -61,6 +62,7 @@ Status: **done** = built and proven; **partial** = built, proof or number still 
 | Cash, positions and profit/loss per portfolio, updated in the same transaction as each fill | done | `backend/src/ledger.ts` (`applyFill`), `backend/src/orders.ts`; `ledger.test.ts` (`charges commission on fills...`) | `cd backend && npx vitest run test/ledger.test.ts` | |
 | Every balance can be rebuilt from the append-only fill history | done | `rebuild()` in `ledger.ts`; `ledger.test.ts` (`rebuilds every balance from fills after a run of random trades`) | same | 60 random trades between 4 traders, cash and every position match the replay exactly |
 | Pre-trade checks: buying power with open orders reserved | done | `checkOrder()` in `ledger.ts`; `buying power` tests | same | |
+| Market orders can't overdraw cash | done | `estimatePrice()` in `ledger.ts` reserves market buys at the price-band ceiling; `market orders` test sweeps a thin book | same | |
 | Short selling with margin | done | same; `holds margin against shorts` | same | 150% Reg T style by default (sale proceeds + 50%), set per league |
 | Leagues with invite codes, custom dates and starting cash | done | `backend/src/routes/leagues.ts`; `leagues` tests | same | |
 | League rules: commissions, position limits, allowed order types, shorting on/off | done | `002_ledger.sql`, `checkOrder()`; `enforces the league's rules`, `charges commission on fills` | same | |

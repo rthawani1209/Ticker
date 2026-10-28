@@ -1,6 +1,8 @@
 # Benchmarks
 
-The latest machine-readable results are in [`results/`](results), produced by `scripts/bench.sh`. [CLAIMS.md](CLAIMS.md) quotes those files. The write-up below is from the first run on 2026-10-23. A run on the same type of VM on 2026-10-27 came out slower (p50 205 ns, 5.2M cmd/s). Shared cloud VMs vary that much from run to run, which is why every number is quoted with its file and date.
+**Numbers to quote** come only from the results files in [`results/`](results), written by `scripts/bench.sh` with the date, machine and command inside. [CLAIMS.md](CLAIMS.md) and the README quote the latest one: [`engine-bench-2026-10-28.json`](results/engine-bench-2026-10-28.json), p50 143 ns, p99 1.6 µs, 7.6M commands/sec on a 4 vCPU cloud VM (Xeon @ 2.80GHz, g++ 13.3).
+
+The write-up further down is from the very first run on 2026-10-23, before `scripts/bench.sh` existed. It has no results file, so **don't quote its numbers** (they came out faster: p50 125 ns, 8.3M cmd/s). It's kept because it explains what the benchmarks measure. Shared cloud VMs vary by 20-40% between runs, which is why every quoted number names its file.
 
 Numbers from the engine's own tools. Re-run them yourself:
 
@@ -11,7 +13,7 @@ engine/build/latency            # per-order latency percentiles
 engine/build/book_bench         # throughput vs the reference book
 ```
 
-## 2026-10-23: matching core
+## 2026-10-23: matching core (first run, historical, not quoted)
 
 Machine: 4 vCPU cloud VM (Intel Xeon @ 2.80GHz), g++ 13.3, Release build (`-O3`). One symbol, one thread.
 

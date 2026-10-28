@@ -49,7 +49,7 @@ cmake --build engine/build -j
 ctest --test-dir engine/build --output-on-failure
 ```
 
-Matching takes about 125 ns at the median and 1.5 µs at p99 on a 4-core cloud VM; see [docs/benchmarks.md](docs/benchmarks.md).
+Matching takes 143 ns at the median and 1.6 µs at p99, at 7.6M commands/sec on one core of a 4 vCPU cloud VM (Xeon @ 2.80GHz), from [docs/results/engine-bench-2026-10-28.json](docs/results/engine-bench-2026-10-28.json). See [docs/benchmarks.md](docs/benchmarks.md) for how it's measured.
 
 Start the server with `engine/build/ticker-engine --port 9100 --journal-dir data/`. The protocol is described in [docs/protocol.md](docs/protocol.md).
 

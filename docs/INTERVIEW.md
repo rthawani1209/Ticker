@@ -4,7 +4,7 @@ How to explain Ticker out loud. Each answer gives what it is, why it was done th
 
 ## The 30-second version
 
-"Ticker is a stock market simulator for student trading competitions. Most practice apps copy real prices, so your orders never move anything. I built a real exchange in C++ that matches orders in about 200 nanoseconds, plus bots and a news engine in Python so the market moves on its own, and a TypeScript gateway and ledger that handles logins, leagues with their own rules, margin for short selling, and a live leaderboard."
+"Ticker is a stock market simulator for student trading competitions. Most practice apps copy real prices, so your orders never move anything. I built a real exchange in C++ that matches an order in about 150 nanoseconds at the median, plus bots and a news engine in Python so the market moves on its own, and a TypeScript gateway and ledger that handles logins, leagues with their own rules, margin for short selling, and a live leaderboard."
 
 ## Likely questions
 
@@ -12,7 +12,7 @@ How to explain Ticker out loud. Each answer gives what it is, why it was done th
 Best price first, then first come, first served at that price (price-time priority). Each price level keeps its orders in a linked list, oldest at the front. An incoming buy walks the sell side from the lowest price up, filling against the front of each list, until it's filled or the next price is too expensive.
 
 **How do you cancel an order instantly among thousands?**
-A hash map goes from order id straight to the order's node in its price level's doubly linked list. Removing a node from a doubly linked list is a couple of pointer updates. So cancel is O(1). In the benchmark, add-and-cancel takes about the same time with 100 resting orders as with 10,000. The simple reference book, which searches a list, goes from under a microsecond to about 47 µs.
+A hash map goes from order id straight to the order's node in its price level's doubly linked list. Removing a node from a doubly linked list is a couple of pointer updates. So cancel is O(1). In the benchmark, add-and-cancel takes about the same time with 100 resting orders as with 10,000. The simple reference book, which searches a list, goes from under a microsecond to about 42 µs.
 *Follow-up: why "intrusive"?* The list pointers live inside the order struct itself, so there is no separate list node to allocate.
 
 **How do you find the best price fast when the book is sparse?**
@@ -50,6 +50,9 @@ It reconnects with backoff and asks for fresh snapshots of every book. Orders th
 **How do you stop a student spending the same money twice?**
 Before an order goes to the exchange, the gateway locks that portfolio's row in Postgres, checks buying power, and saves the order as pending, all in one transaction. A second order from the same portfolio waits for the lock, and then sees the first one as money already reserved. Buying power is cash minus what open buy orders could cost minus the margin held against shorts.
 *Trade-off:* orders from one portfolio are checked one at a time. That's fine at human speed. Different portfolios don't block each other.
+
+**Couldn't a student trade with themselves to move money into a league?**
+They could have: each league portfolio is its own account on the exchange, and self-trade prevention only looked at the account. Now every order carries a self-trade group, and the gateway sets it to the user's id, so one person's portfolios never match each other. The engine cancels the incoming order instead. Same for market orders walking a thin book: they're reserved at the worst price the engine would let them reach (the 10% price band), not at the best ask, so a big one can't take cash below zero.
 
 **How does short selling work?**
 Selling shares you don't have puts the sale money into your cash and gives you a negative position. To make sure you can buy them back if the price rises, you must keep 150% of the short's value: the proceeds plus 50% of your own money (like Reg T in the US). Leagues can change that, or turn shorting off.

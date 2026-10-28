@@ -1,0 +1,93 @@
+{
+  "date": "2026-10-28T16:45:03+00:00",
+  "machine": {
+    "cpu": "Intel(R) Xeon(R) Processor @ 2.80GHz",
+    "cores": 4,
+    "os": "Linux-6.18.44-fc-v180-x86_64-with-glibc2.39",
+    "compiler": "c++ (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0"
+  },
+  "command": "scripts/bench.sh 3",
+  "latency_ns": {
+    "runs": [
+      {
+        "commands": 2000000,
+        "mean": 188,
+        "p50": 129,
+        "p90": 263,
+        "p99": 1499,
+        "p99.9": 4333,
+        "max": 1817582
+      },
+      {
+        "commands": 2000000,
+        "mean": 211,
+        "p50": 143,
+        "p90": 302,
+        "p99": 1576,
+        "p99.9": 4159,
+        "max": 3154613
+      },
+      {
+        "commands": 2000000,
+        "mean": 209,
+        "p50": 143,
+        "p90": 306,
+        "p99": 1570,
+        "p99.9": 3770,
+        "max": 566328
+      }
+    ],
+    "reported": {
+      "commands": 2000000,
+      "mean": 211,
+      "p50": 143,
+      "p90": 302,
+      "p99": 1576,
+      "p99.9": 4159,
+      "max": 3154613
+    },
+    "note": "time inside the order book per command, 2M commands of mixed flow; median run by p50"
+  },
+  "throughput": {
+    "MixedFlow/fast": {
+      "real_time": 26.8,
+      "time_unit": "ms",
+      "items_per_second": 7573201
+    },
+    "MixedFlow/reference": {
+      "real_time": 455.1,
+      "time_unit": "ms",
+      "items_per_second": 444707
+    },
+    "AddCancel/fast/100": {
+      "real_time": 257.5,
+      "time_unit": "ns",
+      "items_per_second": 7811150
+    },
+    "AddCancel/fast/10000": {
+      "real_time": 207.9,
+      "time_unit": "ns",
+      "items_per_second": 9806140
+    },
+    "AddCancel/reference/100": {
+      "real_time": 677.0,
+      "time_unit": "ns",
+      "items_per_second": 2991591
+    },
+    "AddCancel/reference/10000": {
+      "real_time": 41965.4,
+      "time_unit": "ns",
+      "items_per_second": 48089
+    },
+    "Match/fast": {
+      "real_time": 116.0,
+      "time_unit": "ns",
+      "items_per_second": 17291269
+    },
+    "Match/reference": {
+      "real_time": 553.0,
+      "time_unit": "ns",
+      "items_per_second": 3626543
+    }
+  }
+}
