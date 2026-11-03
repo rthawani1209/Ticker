@@ -1,0 +1,111 @@
+.top {
+  position: relative;
+  z-index: 10;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--ink-0) 90%, transparent);
+}
+
+.bar {
+  max-width: 1240px;
+  min-height: 64px;
+  margin: 0 auto;
+  padding-inline: var(--s-6);
+  display: flex;
+  align-items: center;
+  gap: 28px;
+}
+
+.bar a {
+  text-decoration: none;
+}
+
+.links {
+  display: flex;
+  gap: 22px;
+}
+
+.links a {
+  color: var(--text-2);
+}
+
+.links a:hover {
+  color: var(--text);
+}
+
+.grow {
+  flex: 1;
+}
+
+.menu {
+  display: none;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--line-strong);
+  background: var(--ink-1);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.burger,
+.burger::before {
+  display: block;
+  width: 14px;
+  height: 1.5px;
+  background: currentColor;
+  transition: transform var(--t-fast);
+}
+
+.burger {
+  position: relative;
+  transform: translateY(-3px);
+}
+
+.burger::before {
+  content: "";
+  position: absolute;
+  top: 6px;
+}
+
+.burger[data-open="true"] {
+  transform: rotate(45deg);
+}
+
+.burger[data-open="true"]::before {
+  transform: translateY(-6px) rotate(-90deg);
+}
+
+@media (max-width: 760px) {
+  .bar {
+    padding-inline: var(--s-4);
+    gap: var(--s-3);
+  }
+
+  .menu {
+    display: inline-flex;
+  }
+
+  /* the folded menu drops down under the bar, full width */
+  .links {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    flex-direction: column;
+    gap: 0;
+    border-bottom: 1px solid var(--line-strong);
+    background: var(--ink-1);
+  }
+
+  .links[data-open="true"] {
+    display: flex;
+  }
+
+  .links a {
+    padding: var(--s-4);
+    border-top: 1px solid var(--line);
+    color: var(--text);
+  }
+}

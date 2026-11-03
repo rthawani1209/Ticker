@@ -1,0 +1,95 @@
+.board {
+  display: flex;
+  flex-direction: column;
+}
+
+.rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr));
+  border-bottom: 1px solid var(--line);
+}
+
+.row {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--s-2);
+  padding: 10px var(--s-4);
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-right: 1px solid var(--line);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--t-fast);
+}
+
+.row:hover {
+  background: var(--ink-2);
+}
+
+/* the focused symbol gets a bracket on its left edge, in "yours" amber */
+.row[aria-pressed="true"] {
+  background: var(--ink-2);
+  box-shadow: inset 2px 0 0 var(--you);
+}
+
+.ticker {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+}
+
+.change {
+  min-width: 72px;
+  text-align: right;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.change[data-direction="up"] {
+  color: var(--up);
+}
+
+.change[data-direction="down"] {
+  color: var(--down);
+}
+
+.detail {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+}
+
+.depth {
+  border-right: 1px solid var(--line);
+}
+
+.sub {
+  display: block;
+  padding: var(--s-3) var(--s-4) var(--s-2);
+}
+
+.note {
+  margin: 0;
+  padding: var(--s-6) var(--s-4);
+  color: var(--text-2);
+}
+
+@media (max-width: 560px) {
+  .detail {
+    grid-template-columns: 1fr;
+  }
+
+  .depth {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+}

@@ -1,0 +1,63 @@
+.figure {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.svg {
+  display: block;
+  width: 100%;
+  height: 150px;
+}
+
+.bid,
+.ask {
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+  /* Chrome and Safari animate path data; elsewhere the shape just snaps. */
+  transition: d var(--t-base) ease-out;
+}
+
+.bid {
+  stroke: var(--up);
+}
+
+.ask {
+  stroke: var(--down);
+}
+
+.edge {
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+  transition:
+    x1 var(--t-base) ease-out,
+    x2 var(--t-base) ease-out;
+}
+
+.up {
+  stroke: var(--up);
+  filter: drop-shadow(0 0 6px var(--up));
+}
+
+.down {
+  stroke: var(--down);
+  filter: drop-shadow(0 0 6px var(--down));
+}
+
+.caption {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--s-2);
+  padding: var(--s-2) var(--s-4) var(--s-3);
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.upText {
+  color: var(--up);
+}
+
+.downText {
+  color: var(--down);
+}

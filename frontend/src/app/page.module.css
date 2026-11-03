@@ -4,42 +4,6 @@
   padding-inline: var(--s-6);
 }
 
-.top {
-  border-bottom: 1px solid var(--line);
-  background: color-mix(in srgb, var(--ink-0) 90%, transparent);
-}
-
-.nav {
-  min-height: 64px;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--s-3) 28px;
-}
-
-.nav a {
-  text-decoration: none;
-}
-
-.links {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--s-1) 22px;
-}
-
-.links a {
-  color: var(--text-2);
-}
-
-.links a:hover,
-.signin {
-  color: var(--text);
-}
-
-.grow {
-  flex: 1;
-}
-
 .hero {
   padding-block: 72px 64px;
   display: flex;
@@ -54,27 +18,6 @@
   display: flex;
   flex-direction: column;
   gap: 26px;
-}
-
-.live {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.pulse {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--up);
-  box-shadow: 0 0 10px var(--up);
-  animation: pulse 2s ease-in-out infinite;
-}
-
-@keyframes pulse {
-  50% {
-    opacity: 0.35;
-  }
 }
 
 .h1 {

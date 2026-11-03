@@ -1,0 +1,36 @@
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  align-self: flex-start;
+  padding: 6px 12px 6px 10px;
+  border: 1px solid var(--line-strong);
+  background: var(--ink-1);
+}
+
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-3);
+}
+
+.pill[data-mode="live"] .dot {
+  background: var(--up);
+  box-shadow: 0 0 10px var(--up);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+.pill[data-mode="replay"] .dot {
+  background: var(--info);
+}
+
+.pill[data-mode="replay"] {
+  border-color: color-mix(in srgb, var(--info) 45%, var(--line));
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.35;
+  }
+}

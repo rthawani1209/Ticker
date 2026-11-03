@@ -1,0 +1,61 @@
+.tape {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  height: 100%;
+  max-height: 186px;
+  overflow: hidden;
+  font-size: 12px;
+  /* fade the oldest rows out instead of cutting them off */
+  mask-image: linear-gradient(to bottom, #000 70%, transparent);
+}
+
+.row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: var(--s-3);
+  padding: 5px var(--s-4);
+  white-space: nowrap;
+  animation: print var(--t-flash) ease-out;
+}
+
+.row:first-child {
+  background: color-mix(in srgb, var(--ink-2) 80%, transparent);
+}
+
+.time {
+  color: var(--text-3);
+}
+
+.price {
+  text-align: right;
+}
+
+.row[data-side="buy"] .price {
+  color: var(--up);
+}
+
+.row[data-side="sell"] .price {
+  color: var(--down);
+}
+
+.qty {
+  min-width: 48px;
+  text-align: right;
+  color: var(--text-2);
+}
+
+/* a new print slides in from the top, so the tape reads as moving */
+@keyframes print {
+  from {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+}
+
+.empty {
+  margin: 0;
+  padding: var(--s-4);
+  font-size: 12px;
+  color: var(--text-3);
+}

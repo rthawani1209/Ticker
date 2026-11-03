@@ -1,65 +1,47 @@
-import Link from "next/link";
-
-import { LiveBoard } from "@/components/landing/LiveBoard";
+import { MarketBoard } from "@/components/landing/MarketBoard";
+import { MarketFeed } from "@/components/landing/MarketFeed";
+import { REPO, SiteHeader } from "@/components/landing/SiteHeader";
+import { StatusPill } from "@/components/landing/StatusPill";
 import { ButtonLink } from "@/components/ui/Button";
-import { Logo } from "@/components/ui/Logo";
 import { Panel } from "@/components/ui/Panel";
 
 import styles from "./page.module.css";
 
-const REPO = "https://github.com/rthawani1209/Ticker";
-
 export default function Landing() {
   return (
     <>
-      <header className={styles.top}>
-        <div className={`${styles.wrap} ${styles.nav}`}>
-          <Link href="/" aria-label="Ticker home">
-            <Logo />
-          </Link>
-          <nav aria-label="Main" className={styles.links}>
-            <a href="#how">How it works</a>
-            <a href="#leagues">Leagues and classes</a>
-            <a href="#bots">Bots</a>
-            <a href={REPO}>GitHub</a>
-          </nav>
-          <span className={styles.grow} />
-          <Link href="/login" className={styles.signin}>
-            Sign in
-          </Link>
-          <ButtonLink href="/trade">Try it with $100k</ButtonLink>
-        </div>
-      </header>
+      <SiteHeader />
 
       <main>
-        <section className={`${styles.wrap} ${styles.hero}`}>
-          <div className={styles.heroText}>
-            <span className={`label ${styles.live}`}>
-              <span className={styles.pulse} aria-hidden="true" />
-              Market open · bots trading now
-            </span>
-            <h1 className={styles.h1}>A real stock exchange for your class.</h1>
-            <p className={styles.lede}>
-              Most practice apps copy real prices, so your orders never move anything. Ticker runs
-              its own exchange. Every price you see comes from students and bots trading with each
-              other, so when news breaks, you&apos;re the one who moves the market.
-            </p>
-            <div className={styles.actions}>
-              <ButtonLink href="/trade" size="lg">
-                Try it with $100k
-              </ButtonLink>
-              <ButtonLink href="#leagues" variant="ghost" size="lg">
-                Start a league
-              </ButtonLink>
+        <MarketFeed>
+          <section className={`${styles.wrap} ${styles.hero}`}>
+            <div className={styles.heroText}>
+              <StatusPill />
+              <h1 className={styles.h1}>A real stock exchange for your class.</h1>
+              <p className={styles.lede}>
+                Most practice apps copy real prices, so your orders never move anything. Ticker runs
+                its own exchange. Every price you see comes from students and bots trading with each
+                other, so when news breaks, you&apos;re the one who moves the market.
+              </p>
+              <div className={styles.actions}>
+                <ButtonLink href="#market" size="lg">
+                  Watch the market
+                </ButtonLink>
+                <ButtonLink href="#leagues" variant="ghost" size="lg">
+                  Start a league
+                </ButtonLink>
+              </div>
+              <span className={`mono ${styles.fine}`}>
+                Simulated market, no real money. Pick a stock on the board to see its book.
+              </span>
             </div>
-            <span className={`mono ${styles.fine}`}>
-              No sign-up for the practice account. Simulated market, no real money.
-            </span>
-          </div>
-          <Panel label="Live · read only" className={styles.board}>
-            <LiveBoard />
-          </Panel>
-        </section>
+            <div id="market" className={styles.board}>
+              <Panel label="Market · read only">
+                <MarketBoard />
+              </Panel>
+            </div>
+          </section>
+        </MarketFeed>
 
         <section id="how" className={styles.band}>
           <div className={`${styles.wrap} ${styles.section}`}>
@@ -177,12 +159,13 @@ if nova["last"] > nova["refPrice"]:
         </section>
 
         <section className={`${styles.wrap} ${styles.closer}`}>
-          <h2 className={styles.big}>The market is open.</h2>
+          <h2 className={styles.big}>Run your own market.</h2>
           <p className={styles.body}>
-            Start with $100,000 of pretend money. No account needed until you want to join a league.
+            The exchange, the bots and the web app are open source. One clone and a few commands and
+            your class has its own market.
           </p>
-          <ButtonLink href="/trade" size="lg">
-            Try it with $100k
+          <ButtonLink href={REPO} size="lg">
+            Get the code
           </ButtonLink>
         </section>
       </main>
