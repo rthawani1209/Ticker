@@ -33,9 +33,21 @@ export const SIZES: Record<number, number> = {
   [MsgType.Error]: 8,
 };
 
-export enum Side { Buy = 0, Sell = 1 }
-export enum OrdType { Limit = 0, Market = 1, Stop = 2, StopLimit = 3 }
-export enum TIF { GTC = 0, IOC = 1, FOK = 2 }
+export enum Side {
+  Buy = 0,
+  Sell = 1,
+}
+export enum OrdType {
+  Limit = 0,
+  Market = 1,
+  Stop = 2,
+  StopLimit = 3,
+}
+export enum TIF {
+  GTC = 0,
+  IOC = 1,
+  FOK = 2,
+}
 
 export enum EventType {
   Ack = 0,
@@ -52,14 +64,36 @@ export enum EventType {
 }
 
 export const REJECT_REASONS = [
-  "none", "unknown_symbol", "invalid_qty", "invalid_price", "max_qty_exceeded", "price_band",
-  "unknown_order", "not_owner", "invalid_field", "halted", "stop_price_crossed",
+  "none",
+  "unknown_symbol",
+  "invalid_qty",
+  "invalid_price",
+  "max_qty_exceeded",
+  "price_band",
+  "unknown_order",
+  "not_owner",
+  "invalid_field",
+  "halted",
+  "stop_price_crossed",
 ] as const;
 
-export const CANCEL_REASONS = ["user", "unfilled", "fok_unfillable", "self_trade", "book_full", "halted"] as const;
+export const CANCEL_REASONS = [
+  "user",
+  "unfilled",
+  "fok_unfillable",
+  "self_trade",
+  "book_full",
+  "halted",
+] as const;
 
 export const ERROR_CODES = [
-  "", "bad_message", "not_logged_in", "already_logged_in", "bad_token", "not_allowed", "slow_consumer",
+  "",
+  "bad_message",
+  "not_logged_in",
+  "already_logged_in",
+  "bad_token",
+  "not_allowed",
+  "slow_consumer",
 ] as const;
 
 export interface EngineEvent {
@@ -78,9 +112,25 @@ export interface EngineEvent {
   levelQty: number;
 }
 
-export interface LogonAck { kind: "logon_ack"; session: number; flags: number; symbols: number }
-export interface Stats { kind: "stats"; shard: number; commands: number; p50: number; p99: number; p999: number; max: number }
-export interface EngineError { kind: "error"; code: string }
+export interface LogonAck {
+  kind: "logon_ack";
+  session: number;
+  flags: number;
+  symbols: number;
+}
+export interface Stats {
+  kind: "stats";
+  shard: number;
+  commands: number;
+  p50: number;
+  p99: number;
+  p999: number;
+  max: number;
+}
+export interface EngineError {
+  kind: "error";
+  code: string;
+}
 export type Message = ({ kind: "event" } & EngineEvent) | LogonAck | Stats | EngineError;
 
 export class ProtocolError extends Error {}
@@ -152,7 +202,8 @@ const u64 = (b: Buffer, off: number) => Number(b.readBigUInt64LE(off));
 export function decode(b: Buffer): Message {
   const len = b.readUInt16LE(0);
   const type = b.readUInt8(2);
-  if (b.readUInt8(3) !== VERSION || SIZES[type] !== len) throw new ProtocolError(`bad header type=${type} len=${len}`);
+  if (b.readUInt8(3) !== VERSION || SIZES[type] !== len)
+    throw new ProtocolError(`bad header type=${type} len=${len}`);
   switch (type) {
     case MsgType.Event: {
       const e = 8; // the Event struct starts after the header and 4 bytes of padding
@@ -174,11 +225,21 @@ export function decode(b: Buffer): Message {
       };
     }
     case MsgType.LogonAck:
-      return { kind: "logon_ack", session: b.readUInt32LE(4), flags: b.readUInt32LE(8), symbols: b.readUInt32LE(12) };
+      return {
+        kind: "logon_ack",
+        session: b.readUInt32LE(4),
+        flags: b.readUInt32LE(8),
+        symbols: b.readUInt32LE(12),
+      };
     case MsgType.Stats:
       return {
-        kind: "stats", shard: b.readUInt32LE(4), commands: u64(b, 8),
-        p50: u64(b, 16), p99: u64(b, 24), p999: u64(b, 32), max: u64(b, 40),
+        kind: "stats",
+        shard: b.readUInt32LE(4),
+        commands: u64(b, 8),
+        p50: u64(b, 16),
+        p99: u64(b, 24),
+        p999: u64(b, 32),
+        max: u64(b, 40),
       };
     case MsgType.Error:
       return { kind: "error", code: ERROR_CODES[b.readUInt32LE(4)] ?? "unknown" };
@@ -194,7 +255,8 @@ export function split(buf: Buffer): [Buffer[], Buffer] {
   while (buf.length - pos >= 4) {
     const len = buf.readUInt16LE(pos);
     const type = buf.readUInt8(pos + 2);
-    if (buf.readUInt8(pos + 3) !== VERSION || SIZES[type] !== len) throw new ProtocolError(`bad header type=${type}`);
+    if (buf.readUInt8(pos + 3) !== VERSION || SIZES[type] !== len)
+      throw new ProtocolError(`bad header type=${type}`);
     if (buf.length - pos < len) break;
     out.push(buf.subarray(pos, pos + len));
     pos += len;

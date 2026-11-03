@@ -1,7 +1,13 @@
 // Live market state rebuilt from the engine's public events.
 import { EventType, Side, type EngineEvent } from "./protocol.js";
 
-export interface Trade { price: number; qty: number; side: "buy" | "sell"; tradeId: number; time: number }
+export interface Trade {
+  price: number;
+  qty: number;
+  side: "buy" | "sell";
+  tradeId: number;
+  time: number;
+}
 
 export class SymbolBook {
   bids = new Map<number, number>();
@@ -25,7 +31,13 @@ export class SymbolBook {
       case EventType.Trade:
         this.last = e.price;
         this.volume += e.qty;
-        this.trades.push({ price: e.price, qty: e.qty, side: e.side === Side.Buy ? "buy" : "sell", tradeId: e.tradeId, time: now });
+        this.trades.push({
+          price: e.price,
+          qty: e.qty,
+          side: e.side === Side.Buy ? "buy" : "sell",
+          tradeId: e.tradeId,
+          time: now,
+        });
         if (this.trades.length > 200) this.trades.splice(0, this.trades.length - 200);
         break;
       case EventType.SnapshotEnd:
@@ -46,7 +58,9 @@ export class SymbolBook {
 
   depth(levels = 10) {
     const sorted = (m: Map<number, number>, desc: boolean) =>
-      [...m.entries()].sort((a, b) => (desc ? b[0] - a[0] : a[0] - b[0])).slice(0, levels)
+      [...m.entries()]
+        .sort((a, b) => (desc ? b[0] - a[0] : a[0] - b[0]))
+        .slice(0, levels)
         .map(([price, qty]) => ({ price, qty }));
     return { bids: sorted(this.bids, true), asks: sorted(this.asks, false) };
   }

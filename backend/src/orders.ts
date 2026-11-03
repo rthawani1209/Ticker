@@ -11,7 +11,14 @@ import type { Db } from "./db/pool.js";
 import type { EngineBridge } from "./engine/bridge.js";
 import * as p from "./engine/protocol.js";
 import { ApiError } from "./errors.js";
-import { applyFill, checkOrder, commission, LEAGUE_COLUMNS, toLeague, type Marks } from "./ledger.js";
+import {
+  applyFill,
+  checkOrder,
+  commission,
+  LEAGUE_COLUMNS,
+  toLeague,
+  type Marks,
+} from "./ledger.js";
 
 export const FIRST_BOT_ACCOUNT = 900_001;
 
@@ -61,7 +68,10 @@ export interface Fill {
 
 const SIDES: Record<SideName, p.Side> = { buy: p.Side.Buy, sell: p.Side.Sell };
 const TYPES: Record<TypeName, p.OrdType> = {
-  limit: p.OrdType.Limit, market: p.OrdType.Market, stop: p.OrdType.Stop, stop_limit: p.OrdType.StopLimit,
+  limit: p.OrdType.Limit,
+  market: p.OrdType.Market,
+  stop: p.OrdType.Stop,
+  stop_limit: p.OrdType.StopLimit,
 };
 const TIFS: Record<TifName, p.TIF> = { gtc: p.TIF.GTC, ioc: p.TIF.IOC, fok: p.TIF.FOK };
 
@@ -70,13 +80,26 @@ const ORDER_COLUMNS = `o.id, pf.league_id, s.ticker AS symbol, o.side, o.type, o
 
 function toOrder(r: any): Order {
   return {
-    id: r.id, league: r.league_id, symbol: r.symbol, side: r.side, type: r.type, tif: r.tif, price: r.price, stopPrice: r.stop_price,
-    qty: r.qty, leaves: r.leaves, filledQty: r.filled_qty, status: r.status, rejectReason: r.reject_reason,
-    createdAt: r.created_at.toISOString(), updatedAt: r.updated_at.toISOString(),
+    id: r.id,
+    league: r.league_id,
+    symbol: r.symbol,
+    side: r.side,
+    type: r.type,
+    tif: r.tif,
+    price: r.price,
+    stopPrice: r.stop_price,
+    qty: r.qty,
+    leaves: r.leaves,
+    filledQty: r.filled_qty,
+    status: r.status,
+    rejectReason: r.reject_reason,
+    createdAt: r.created_at.toISOString(),
+    updatedAt: r.updated_at.toISOString(),
   };
 }
 
-const ORDER_FROM = "orders o JOIN symbols s ON s.id = o.symbol_id JOIN portfolios pf ON pf.id = o.portfolio_id";
+const ORDER_FROM =
+  "orders o JOIN symbols s ON s.id = o.symbol_id JOIN portfolios pf ON pf.id = o.portfolio_id";
 
 export class OrderService extends EventEmitter {
   // Engine events are applied to the database one at a time, in arrival order.
@@ -84,7 +107,10 @@ export class OrderService extends EventEmitter {
 
   readonly marks: Marks;
 
-  constructor(private db: Db, private bridge: EngineBridge) {
+  constructor(
+    private db: Db,
+    private bridge: EngineBridge,
+  ) {
     super();
     this.marks = {
       last: (symbolId) => bridge.books[symbolId]!.last,
@@ -110,7 +136,8 @@ export class OrderService extends EventEmitter {
 
   // Places an order in one of the user's leagues (the practice league by default).
   async place(userId: number, input: OrderInput, leagueId?: number): Promise<Order> {
-    if (!this.bridge.connected) throw new ApiError(503, "exchange_down", "the exchange is not connected");
+    if (!this.bridge.connected)
+      throw new ApiError(503, "exchange_down", "the exchange is not connected");
     let id = 0;
     let account = 0;
     await this.tx(async (client) => {
@@ -125,11 +152,27 @@ export class OrderService extends EventEmitter {
       );
       const row = rows[0];
       if (!row) throw new ApiError(404, "not_a_member", "you're not in that league");
-      await checkOrder(client, toLeague(row), { id: row.portfolio_id, cash: row.cash }, input, this.marks);
+      await checkOrder(
+        client,
+        toLeague(row),
+        { id: row.portfolio_id, cash: row.cash },
+        input,
+        this.marks,
+      );
       const inserted = await client.query(
         `INSERT INTO orders (user_id, portfolio_id, symbol_id, side, type, tif, price, stop_price, qty, leaves)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9) RETURNING id`,
-        [userId, row.portfolio_id, input.symbolId, input.side, input.type, input.tif, input.price ?? null, input.stopPrice ?? null, input.qty],
+        [
+          userId,
+          row.portfolio_id,
+          input.symbolId,
+          input.side,
+          input.type,
+          input.tif,
+          input.price ?? null,
+          input.stopPrice ?? null,
+          input.qty,
+        ],
       );
       id = inserted.rows[0].id;
       account = row.portfolio_id;
@@ -165,7 +208,8 @@ export class OrderService extends EventEmitter {
     if (!["open", "partially_filled"].includes(row.status) || !row.engine_order_id) {
       throw new ApiError(409, "not_open", `order is ${row.status}`);
     }
-    if (!this.bridge.connected) throw new ApiError(503, "exchange_down", "the exchange is not connected");
+    if (!this.bridge.connected)
+      throw new ApiError(503, "exchange_down", "the exchange is not connected");
 
     const done = new Promise<void>((resolve) => {
       const onUpdate = (o: Order) => {
@@ -180,7 +224,10 @@ export class OrderService extends EventEmitter {
         resolve();
       }, 2000).unref();
     });
-    const reject = await Promise.race([this.bridge.cancel(row.portfolio_id, row.engine_order_id, row.symbol_id), done.then(() => null)]);
+    const reject = await Promise.race([
+      this.bridge.cancel(row.portfolio_id, row.engine_order_id, row.symbol_id),
+      done.then(() => null),
+    ]);
     if (reject && reject.type === p.EventType.Reject) {
       await this.settled();
       const current = (await this.get(userId, orderId))!;
@@ -200,7 +247,10 @@ export class OrderService extends EventEmitter {
     return rows[0] ? toOrder(rows[0]) : null;
   }
 
-  async list(userId: number, opts: { open?: boolean; league?: number; limit: number; before?: number }): Promise<Order[]> {
+  async list(
+    userId: number,
+    opts: { open?: boolean; league?: number; limit: number; before?: number },
+  ): Promise<Order[]> {
     const { rows } = await this.db.query(
       `SELECT ${ORDER_COLUMNS} FROM ${ORDER_FROM}
        WHERE o.user_id = $1 AND ($2::boolean IS NOT TRUE OR o.status IN ('pending', 'open', 'partially_filled'))
@@ -219,8 +269,15 @@ export class OrderService extends EventEmitter {
       [userId, opts.limit, opts.league ?? null],
     );
     return rows.map((r) => ({
-      id: r.id, orderId: r.order_id, league: r.league_id, symbol: r.symbol, side: r.side, price: r.price, qty: r.qty,
-      commission: r.commission, createdAt: r.created_at.toISOString(),
+      id: r.id,
+      orderId: r.order_id,
+      league: r.league_id,
+      symbol: r.symbol,
+      side: r.side,
+      price: r.price,
+      qty: r.qty,
+      commission: r.commission,
+      createdAt: r.created_at.toISOString(),
     }));
   }
 
@@ -301,7 +358,13 @@ export class OrderService extends EventEmitter {
             [o.id, o.user_id, o.portfolio_id, o.symbol_id, o.side, e.price, e.qty, fee, e.tradeId],
           );
           if (!inserted.rows[0]) return;
-          await applyFill(client, o.portfolio_id, { symbolId: o.symbol_id, side: o.side, price: e.price, qty: e.qty, commission: fee });
+          await applyFill(client, o.portfolio_id, {
+            symbolId: o.symbol_id,
+            side: o.side,
+            price: e.price,
+            qty: e.qty,
+            commission: fee,
+          });
           await client.query(
             `UPDATE orders SET leaves = $2, filled_qty = filled_qty + $3,
                status = CASE WHEN $2 = 0 THEN 'filled'::order_status ELSE 'partially_filled'::order_status END,
@@ -313,7 +376,11 @@ export class OrderService extends EventEmitter {
         });
         if (fill) {
           this.emit(`fill:${userId}`, {
-            ...fill, symbol: e.symbol, side: e.side === p.Side.Buy ? "buy" : "sell", price: e.price, qty: e.qty,
+            ...fill,
+            symbol: e.symbol,
+            side: e.side === p.Side.Buy ? "buy" : "sell",
+            price: e.price,
+            qty: e.qty,
           });
         }
         break;

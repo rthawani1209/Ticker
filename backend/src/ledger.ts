@@ -35,13 +35,26 @@ export const LEAGUE_COLUMNS = `l.id, l.name, l.is_practice, l.starts_at, l.ends_
 
 export function toLeague(r: any): League {
   return {
-    id: r.id, name: r.name, isPractice: r.is_practice, startsAt: r.starts_at, endsAt: r.ends_at,
-    startingCash: r.starting_cash, commissionCents: r.commission_cents, commissionBps: r.commission_bps,
-    maxPosition: r.max_position, allowShort: r.allow_short, marginBps: r.margin_bps, allowedTypes: r.allowed_types,
+    id: r.id,
+    name: r.name,
+    isPractice: r.is_practice,
+    startsAt: r.starts_at,
+    endsAt: r.ends_at,
+    startingCash: r.starting_cash,
+    commissionCents: r.commission_cents,
+    commissionBps: r.commission_bps,
+    maxPosition: r.max_position,
+    allowShort: r.allow_short,
+    marginBps: r.margin_bps,
+    allowedTypes: r.allowed_types,
   };
 }
 
-export function commission(league: Pick<League, "commissionCents" | "commissionBps">, price: number, qty: number): number {
+export function commission(
+  league: Pick<League, "commissionCents" | "commissionBps">,
+  price: number,
+  qty: number,
+): number {
   return league.commissionCents + Math.round((price * qty * league.commissionBps) / 10_000);
 }
 
@@ -90,9 +103,16 @@ export function rebuild(startingCash: number, fills: LedgerFill[]) {
 
 // Records a fill against a portfolio's cash and position. Runs inside the same
 // transaction that inserts the fill row, so the two can never disagree.
-export async function applyFill(client: PoolClient, portfolioId: number, f: LedgerFill): Promise<void> {
+export async function applyFill(
+  client: PoolClient,
+  portfolioId: number,
+  f: LedgerFill,
+): Promise<void> {
   const dq = f.side === "buy" ? f.qty : -f.qty;
-  await client.query("UPDATE portfolios SET cash = cash - $2 WHERE id = $1", [portfolioId, dq * f.price + f.commission]);
+  await client.query("UPDATE portfolios SET cash = cash - $2 WHERE id = $1", [
+    portfolioId,
+    dq * f.price + f.commission,
+  ]);
   const { rows } = await client.query(
     "SELECT qty, cost, realized FROM positions WHERE portfolio_id = $1 AND symbol_id = $2 FOR UPDATE",
     [portfolioId, f.symbolId],
@@ -122,7 +142,13 @@ export const PRICE_BAND_BPS = 1000;
 // the higher of the stop, the last trade and the best ask, which overstates the
 // value of a short and so errs on the side of more margin.
 export function estimatePrice(
-  o: { type: string; side: string; price?: number | null; stopPrice?: number | null; symbolId: number },
+  o: {
+    type: string;
+    side: string;
+    price?: number | null;
+    stopPrice?: number | null;
+    symbolId: number;
+  },
   marks: Marks,
 ) {
   if (o.type === "limit" || o.type === "stop_limit") return o.price!;
@@ -139,16 +165,29 @@ export function estimatePrice(
 // held against short positions. Shorting credits the sale to cash, so a short of
 // value V needs (margin - 100%) of V on top of that: 50% with the default 150%.
 export async function checkOrder(
-  client: PoolClient, league: League, portfolio: { id: number; cash: number }, o: OrderInput, marks: Marks, now = new Date(),
+  client: PoolClient,
+  league: League,
+  portfolio: { id: number; cash: number },
+  o: OrderInput,
+  marks: Marks,
+  now = new Date(),
 ): Promise<void> {
-  if (now < league.startsAt) throw new ApiError(403, "league_closed", "the league hasn't started yet");
-  if (league.endsAt && now >= league.endsAt) throw new ApiError(403, "league_closed", "the league has ended");
+  if (now < league.startsAt)
+    throw new ApiError(403, "league_closed", "the league hasn't started yet");
+  if (league.endsAt && now >= league.endsAt)
+    throw new ApiError(403, "league_closed", "the league has ended");
   if (!league.allowedTypes.includes(o.type)) {
-    throw new ApiError(422, "order_type_not_allowed", `${o.type} orders aren't allowed in this league`);
+    throw new ApiError(
+      422,
+      "order_type_not_allowed",
+      `${o.type} orders aren't allowed in this league`,
+    );
   }
 
   const [positions, open] = await Promise.all([
-    client.query("SELECT symbol_id, qty FROM positions WHERE portfolio_id = $1 AND qty <> 0", [portfolio.id]),
+    client.query("SELECT symbol_id, qty FROM positions WHERE portfolio_id = $1 AND qty <> 0", [
+      portfolio.id,
+    ]),
     client.query(
       `SELECT symbol_id, side, type, price, stop_price, leaves FROM orders
        WHERE portfolio_id = $1 AND status IN ('pending', 'open', 'partially_filled')`,
@@ -163,7 +202,16 @@ export async function checkOrder(
   const openBuys = new Map<number, number>();
   const openSells = new Map<number, number>();
   for (const r of open.rows) {
-    const px = estimatePrice({ type: r.type, side: r.side, price: r.price, stopPrice: r.stop_price, symbolId: r.symbol_id }, marks);
+    const px = estimatePrice(
+      {
+        type: r.type,
+        side: r.side,
+        price: r.price,
+        stopPrice: r.stop_price,
+        symbolId: r.symbol_id,
+      },
+      marks,
+    );
     if (r.side === "buy") {
       reserved += r.leaves * px;
       openBuys.set(r.symbol_id, (openBuys.get(r.symbol_id) ?? 0) + r.leaves);
@@ -187,7 +235,11 @@ export async function checkOrder(
     needed = o.qty * px;
     const after = qty + (openBuys.get(o.symbolId) ?? 0) + o.qty;
     if (league.maxPosition !== null && after > league.maxPosition) {
-      throw new ApiError(422, "position_limit", `that would take you past ${league.maxPosition} shares`);
+      throw new ApiError(
+        422,
+        "position_limit",
+        `that would take you past ${league.maxPosition} shares`,
+      );
     }
   } else {
     // Selling shares you hold needs nothing; anything beyond that is a short.
@@ -198,12 +250,20 @@ export async function checkOrder(
     }
     const after = qty - (openSells.get(o.symbolId) ?? 0) - o.qty;
     if (league.maxPosition !== null && -after > league.maxPosition) {
-      throw new ApiError(422, "position_limit", `that would take you past ${league.maxPosition} shares short`);
+      throw new ApiError(
+        422,
+        "position_limit",
+        `that would take you past ${league.maxPosition} shares short`,
+      );
     }
     needed = opening * px * (margin - 1);
   }
   needed += commission(league, px, o.qty);
   if (needed > buyingPower) {
-    throw new ApiError(422, "insufficient_funds", `needs $${(needed / 100).toFixed(2)}, you have $${(Math.max(0, buyingPower) / 100).toFixed(2)} available`);
+    throw new ApiError(
+      422,
+      "insufficient_funds",
+      `needs $${(needed / 100).toFixed(2)}, you have $${(Math.max(0, buyingPower) / 100).toFixed(2)} available`,
+    );
   }
 }

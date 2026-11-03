@@ -16,7 +16,9 @@ export async function migrate(db: Db, log: (msg: string) => void = () => {}): Pr
     await client.query("SELECT pg_advisory_lock(7411)");
     await client.query(`CREATE TABLE IF NOT EXISTS schema_migrations (
       name text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())`);
-    const done = new Set((await client.query("SELECT name FROM schema_migrations")).rows.map((r) => r.name));
+    const done = new Set(
+      (await client.query("SELECT name FROM schema_migrations")).rows.map((r) => r.name),
+    );
     const files = (await readdir(dir)).filter((f) => f.endsWith(".sql")).sort();
     const applied: string[] = [];
     for (const file of files) {

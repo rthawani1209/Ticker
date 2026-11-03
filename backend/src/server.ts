@@ -15,7 +15,9 @@ const db = createPool(config.DATABASE_URL);
 await migrate(db, (m) => console.log(`migrate: ${m}`));
 
 const symbols = await loadSymbols(db);
-const redis = config.REDIS_URL ? new Redis(config.REDIS_URL, { maxRetriesPerRequest: 1 }) : undefined;
+const redis = config.REDIS_URL
+  ? new Redis(config.REDIS_URL, { maxRetriesPerRequest: 1 })
+  : undefined;
 const bridge = new EngineBridge({
   host: config.ENGINE_HOST,
   port: config.ENGINE_PORT,
@@ -23,10 +25,21 @@ const bridge = new EngineBridge({
   refPrices: symbols.map((s) => s.refPrice),
 });
 const orders = new OrderService(db, bridge);
-const leaderboard = new Leaderboard(db, orders.marks, symbols.map((s) => s.id), redis, config.SNAPSHOT_INTERVAL_S);
+const leaderboard = new Leaderboard(
+  db,
+  orders.marks,
+  symbols.map((s) => s.id),
+  redis,
+  config.SNAPSHOT_INTERVAL_S,
+);
 const app = await buildApp(
   {
-    config, db, redis, bridge, orders, leaderboard,
+    config,
+    db,
+    redis,
+    bridge,
+    orders,
+    leaderboard,
     tokens: new Tokens(config.JWT_SECRET, db),
     symbols,
     symbolsByTicker: new Map(symbols.map((s) => [s.ticker, s])),
@@ -42,7 +55,14 @@ orders.on("error", (err) => app.log.error(err, "failed to apply an engine event"
 // Keep retrying in the background: the API (logins, history) works while the exchange is down.
 bridge.start().catch((err) => {
   app.log.warn(`exchange not reachable yet (${err.message}), retrying`);
-  const retry = setInterval(() => bridge.start().then(() => clearInterval(retry), () => {}), 2000);
+  const retry = setInterval(
+    () =>
+      bridge.start().then(
+        () => clearInterval(retry),
+        () => {},
+      ),
+    2000,
+  );
 });
 
 await app.listen({ host: config.HOST, port: config.PORT });

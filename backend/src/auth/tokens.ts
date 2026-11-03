@@ -10,12 +10,18 @@ export const REFRESH_TTL_S = 30 * 24 * 3600;
 export const REUSE_GRACE_S = 10;
 
 export type Role = "student" | "professor" | "admin";
-export interface AccessClaims { userId: number; role: Role }
+export interface AccessClaims {
+  userId: number;
+  role: Role;
+}
 
 export class Tokens {
   private key: Uint8Array;
 
-  constructor(secret: string, private db: Db) {
+  constructor(
+    secret: string,
+    private db: Db,
+  ) {
     this.key = new TextEncoder().encode(secret);
   }
 
@@ -47,7 +53,15 @@ export class Tokens {
     await client.query(
       `INSERT INTO refresh_tokens (id, user_id, family_id, token_hash, expires_at, user_agent, ip)
        VALUES ($1, $2, $3, $4, now() + make_interval(secs => $5), $6, $7)`,
-      [randomUUID(), userId, meta.familyId ?? randomUUID(), sha256(token), REFRESH_TTL_S, meta.userAgent ?? null, meta.ip ?? null],
+      [
+        randomUUID(),
+        userId,
+        meta.familyId ?? randomUUID(),
+        sha256(token),
+        REFRESH_TTL_S,
+        meta.userAgent ?? null,
+        meta.ip ?? null,
+      ],
     );
     return token;
   }
@@ -60,8 +74,10 @@ export class Tokens {
   // the same moment both send it, and the slower one shouldn't log the user out.
   // That request gets its own new token in the family. (We only keep hashes, so we
   // can't hand back the exact successor the first request got.)
-  async rotate(token: string, meta: { userAgent?: string; ip?: string }):
-    Promise<{ userId: number; token: string } | { error: "invalid" | "reused" }> {
+  async rotate(
+    token: string,
+    meta: { userAgent?: string; ip?: string },
+  ): Promise<{ userId: number; token: string } | { error: "invalid" | "reused" }> {
     const client = await this.db.connect();
     try {
       await client.query("BEGIN");
@@ -77,12 +93,20 @@ export class Tokens {
         return { error: "invalid" };
       }
       if (row.used && !row.in_grace) {
-        await client.query("UPDATE refresh_tokens SET revoked_at = now() WHERE family_id = $1 AND revoked_at IS NULL", [row.family_id]);
+        await client.query(
+          "UPDATE refresh_tokens SET revoked_at = now() WHERE family_id = $1 AND revoked_at IS NULL",
+          [row.family_id],
+        );
         await client.query("COMMIT");
         return { error: "reused" };
       }
-      if (!row.used) await client.query("UPDATE refresh_tokens SET used_at = now() WHERE id = $1", [row.id]);
-      const next = await this.issueRefresh(row.user_id, { ...meta, familyId: row.family_id }, client);
+      if (!row.used)
+        await client.query("UPDATE refresh_tokens SET used_at = now() WHERE id = $1", [row.id]);
+      const next = await this.issueRefresh(
+        row.user_id,
+        { ...meta, familyId: row.family_id },
+        client,
+      );
       await client.query("COMMIT");
       return { userId: row.user_id, token: next };
     } catch (err) {

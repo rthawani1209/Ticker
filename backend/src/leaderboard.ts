@@ -129,17 +129,25 @@ export class Leaderboard {
       for (let i = 0; i < flat.length; i += 2) out.push([Number(flat[i]), Number(flat[i + 1])]);
       return out;
     }
-    return [...(this.memory.get(key) ?? new Map<number, number>()).entries()].sort((a, b) => b[1] - a[1]).slice(0, limit);
+    return [...(this.memory.get(key) ?? new Map<number, number>()).entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, limit);
   }
 
   private async scores(key: string, ids: number[]): Promise<Map<number, number>> {
     if (ids.length === 0) return new Map();
     if (this.redis) {
       const values = await this.redis.zmscore(key, ...ids.map(String));
-      return new Map(ids.flatMap((id, i) => (values[i] === null ? [] : [[id, Number(values[i])] as [number, number]])));
+      return new Map(
+        ids.flatMap((id, i) =>
+          values[i] === null ? [] : [[id, Number(values[i])] as [number, number]],
+        ),
+      );
     }
     const set = this.memory.get(key);
-    return new Map(ids.flatMap((id) => (set?.has(id) ? [[id, set.get(id)!] as [number, number]] : [])));
+    return new Map(
+      ids.flatMap((id) => (set?.has(id) ? [[id, set.get(id)!] as [number, number]] : [])),
+    );
   }
 
   async top(leagueId: number, by: RankBy, limit = 50): Promise<Standing[]> {
@@ -151,7 +159,9 @@ export class Leaderboard {
        JOIN users u ON u.id = pf.user_id JOIN leagues l ON l.id = pf.league_id WHERE pf.id = ANY($1)`,
       [ids],
     );
-    const info = new Map<number, { username: string; starting_cash: number }>(rows.map((r) => [r.id, r]));
+    const info = new Map<number, { username: string; starting_cash: number }>(
+      rows.map((r) => [r.id, r]),
+    );
     return ranked.map(([id, score], i) => {
       const returnPct = by === "return" ? score : (other.get(id) ?? 0);
       const startingCash = info.get(id)?.starting_cash ?? 0;

@@ -15,7 +15,10 @@ const Env = z.object({
   SNAPSHOT_INTERVAL_S: z.coerce.number().int().min(1).default(60),
   // Only behind a load balancer that sets X-Forwarded-For. Otherwise clients could
   // pick their own IP and dodge per-IP rate limits.
-  TRUST_PROXY: z.enum(["true", "false", "1", "0"]).default("false").transform((v) => v === "true" || v === "1"),
+  TRUST_PROXY: z
+    .enum(["true", "false", "1", "0"])
+    .default("false")
+    .transform((v) => v === "true" || v === "1"),
 });
 
 export type Config = z.infer<typeof Env>;

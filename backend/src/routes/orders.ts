@@ -21,10 +21,18 @@ const NewOrder = z
     const needsPrice = o.type === "limit" || o.type === "stop_limit";
     const needsStop = o.type === "stop" || o.type === "stop_limit";
     if (needsPrice !== (o.price !== undefined)) {
-      ctx.addIssue({ code: "custom", path: ["price"], message: needsPrice ? "required" : `not allowed for ${o.type} orders` });
+      ctx.addIssue({
+        code: "custom",
+        path: ["price"],
+        message: needsPrice ? "required" : `not allowed for ${o.type} orders`,
+      });
     }
     if (needsStop !== (o.stopPrice !== undefined)) {
-      ctx.addIssue({ code: "custom", path: ["stopPrice"], message: needsStop ? "required" : `not allowed for ${o.type} orders` });
+      ctx.addIssue({
+        code: "custom",
+        path: ["stopPrice"],
+        message: needsStop ? "required" : `not allowed for ${o.type} orders`,
+      });
     }
   });
 
@@ -47,18 +55,36 @@ export default async function orderRoutes(app: FastifyInstance) {
   app.post("/", { config: orderLimit }, async (req, reply) => {
     const body = NewOrder.parse(req.body);
     const sym = symbolsByTicker.get(body.symbol);
-    if (!sym) return reply.code(422).send({ error: "unknown_symbol", message: `no symbol ${body.symbol}` });
+    if (!sym)
+      return reply.code(422).send({ error: "unknown_symbol", message: `no symbol ${body.symbol}` });
     // Market orders can only be immediate; everything else rests until cancelled by default.
     const tif = body.tif ?? (body.type === "market" ? "ioc" : "gtc");
     const { league, ...input } = body;
     const order = await orders.place(req.user.userId, { ...input, symbolId: sym.id, tif }, league);
-    await audit(db, req.user.userId, "order_new", { orderId: order.id, league: order.league, symbol: sym.ticker, side: body.side, qty: body.qty }, req.ip);
+    await audit(
+      db,
+      req.user.userId,
+      "order_new",
+      {
+        orderId: order.id,
+        league: order.league,
+        symbol: sym.ticker,
+        side: body.side,
+        qty: body.qty,
+      },
+      req.ip,
+    );
     return reply.code(order.status === "rejected" ? 422 : 201).send(order);
   });
 
   app.get("/", async (req) => {
     const q = ListQuery.parse(req.query);
-    return orders.list(req.user.userId, { open: q.open === "true" ? true : undefined, league: q.league, limit: q.limit, before: q.before });
+    return orders.list(req.user.userId, {
+      open: q.open === "true" ? true : undefined,
+      league: q.league,
+      limit: q.limit,
+      before: q.before,
+    });
   });
 
   app.get("/:id", async (req, reply) => {
@@ -79,7 +105,10 @@ export async function fillRoutes(app: FastifyInstance) {
   app.addHook("preHandler", app.authenticate);
   app.get("/", async (req) => {
     const q = z
-      .object({ limit: z.coerce.number().int().min(1).max(500).default(100), league: z.coerce.number().int().positive().optional() })
+      .object({
+        limit: z.coerce.number().int().min(1).max(500).default(100),
+        league: z.coerce.number().int().positive().optional(),
+      })
       .parse(req.query);
     return app.deps.orders.fills(req.user.userId, q);
   });

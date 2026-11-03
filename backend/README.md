@@ -13,28 +13,28 @@ The API gateway between the web app (and student bots) and the exchange. Node 20
 
 All prices are in cents. Authenticated routes take `Authorization: Bearer <accessToken>`.
 
-| Method | Path | |
-|--------|------|---|
-| POST | `/v1/auth/register` | `{email, username, password}` → `{accessToken, user}` and the refresh cookie |
-| POST | `/v1/auth/login` | `{email, password}` |
-| POST | `/v1/auth/refresh` | swaps the refresh cookie for a new one and a new access token |
-| POST | `/v1/auth/logout` | |
-| GET | `/v1/me` | |
-| POST | `/v1/orders` | `{symbol, side, type?, tif?, qty, price?, stopPrice?, league?}` (league defaults to practice) |
-| GET | `/v1/orders` | `?open=true&league=<id>&limit=50&before=<id>` |
-| GET/DELETE | `/v1/orders/:id` | DELETE cancels |
-| GET | `/v1/fills` | `?league=<id>&limit=100` |
-| GET | `/v1/positions` | `?league=<id>`: cash, equity, positions with average price and P&L |
-| POST | `/v1/leagues` | `{name, startingCash?, startsAt?, endsAt?, commissionCents?, commissionBps?, maxPosition?, allowShort?, marginBps?, allowedTypes?}` |
-| GET | `/v1/leagues` | leagues you're in |
-| GET | `/v1/leagues/:id` | the owner also sees the invite code |
-| POST | `/v1/leagues/join` | `{code}` |
-| GET | `/v1/leagues/:id/leaderboard` | `?by=return\|sharpe&limit=50` |
-| GET | `/v1/symbols` | every stock with last price, bid/ask and volume |
-| GET | `/v1/market/:ticker` | `?depth=10` |
-| GET | `/v1/market/:ticker/trades` | last 100 trades |
-| GET | `/v1/engine/stats` | engine throughput and latency |
-| GET | `/health` | |
+| Method     | Path                          |                                                                                                                                     |
+| ---------- | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| POST       | `/v1/auth/register`           | `{email, username, password}` → `{accessToken, user}` and the refresh cookie                                                        |
+| POST       | `/v1/auth/login`              | `{email, password}`                                                                                                                 |
+| POST       | `/v1/auth/refresh`            | swaps the refresh cookie for a new one and a new access token                                                                       |
+| POST       | `/v1/auth/logout`             |                                                                                                                                     |
+| GET        | `/v1/me`                      |                                                                                                                                     |
+| POST       | `/v1/orders`                  | `{symbol, side, type?, tif?, qty, price?, stopPrice?, league?}` (league defaults to practice)                                       |
+| GET        | `/v1/orders`                  | `?open=true&league=<id>&limit=50&before=<id>`                                                                                       |
+| GET/DELETE | `/v1/orders/:id`              | DELETE cancels                                                                                                                      |
+| GET        | `/v1/fills`                   | `?league=<id>&limit=100`                                                                                                            |
+| GET        | `/v1/positions`               | `?league=<id>`: cash, equity, positions with average price and P&L                                                                  |
+| POST       | `/v1/leagues`                 | `{name, startingCash?, startsAt?, endsAt?, commissionCents?, commissionBps?, maxPosition?, allowShort?, marginBps?, allowedTypes?}` |
+| GET        | `/v1/leagues`                 | leagues you're in                                                                                                                   |
+| GET        | `/v1/leagues/:id`             | the owner also sees the invite code                                                                                                 |
+| POST       | `/v1/leagues/join`            | `{code}`                                                                                                                            |
+| GET        | `/v1/leagues/:id/leaderboard` | `?by=return\|sharpe&limit=50`                                                                                                       |
+| GET        | `/v1/symbols`                 | every stock with last price, bid/ask and volume                                                                                     |
+| GET        | `/v1/market/:ticker`          | `?depth=10`                                                                                                                         |
+| GET        | `/v1/market/:ticker/trades`   | last 100 trades                                                                                                                     |
+| GET        | `/v1/engine/stats`            | engine throughput and latency                                                                                                       |
+| GET        | `/health`                     |                                                                                                                                     |
 
 WebSocket at `/ws` (pass `?token=` or send `{"op":"auth","token":...}`), then `{"op":"subscribe","channel":...}` for `book:NOVA`, `trades:NOVA`, `status` or `me:orders`.
 
@@ -65,3 +65,5 @@ REDIS_URL=redis://localhost:6379 npm test
 ```
 
 Each test file wipes and re-migrates the test database.
+
+`npm run lint` (ESLint with typescript-eslint) and `npm run format:check` (Prettier, same settings as the frontend) run in CI and in `scripts/check.sh`.

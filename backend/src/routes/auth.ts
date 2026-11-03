@@ -30,7 +30,11 @@ export default async function authRoutes(app: FastifyInstance) {
 
   const meta = (req: FastifyRequest) => ({ userAgent: req.headers["user-agent"], ip: req.ip });
 
-  async function session(reply: FastifyReply, user: { id: number; role: any; username: string }, refresh: string) {
+  async function session(
+    reply: FastifyReply,
+    user: { id: number; role: any; username: string },
+    refresh: string,
+  ) {
     setRefreshCookie(reply, refresh);
     return {
       accessToken: await tokens.accessToken({ userId: user.id, role: user.role }),
@@ -54,7 +58,8 @@ export default async function authRoutes(app: FastifyInstance) {
       [body.email, body.username, hash],
     );
     const user = rows[0];
-    if (!user) return reply.code(409).send({ error: "taken", message: "email or username already in use" });
+    if (!user)
+      return reply.code(409).send({ error: "taken", message: "email or username already in use" });
     await audit(db, user.id, "register", {}, req.ip);
     reply.code(201);
     return session(reply, user, await tokens.issueRefresh(user.id, meta(req)));
@@ -62,7 +67,10 @@ export default async function authRoutes(app: FastifyInstance) {
 
   app.post("/login", { config: authLimit }, async (req, reply) => {
     const body = Login.parse(req.body);
-    const { rows } = await db.query("SELECT id, username, role, password_hash FROM users WHERE email = $1", [body.email]);
+    const { rows } = await db.query(
+      "SELECT id, username, role, password_hash FROM users WHERE email = $1",
+      [body.email],
+    );
     const user = rows[0];
     const ok = await verifyPassword(user?.password_hash ?? (await dummyHash()), body.password);
     if (!user || !ok) {
@@ -80,9 +88,13 @@ export default async function authRoutes(app: FastifyInstance) {
     if ("error" in result) {
       reply.clearCookie(COOKIE, { path: "/v1/auth" });
       if (result.error === "reused") await audit(db, null, "refresh_reuse", {}, req.ip);
-      return reply.code(401).send({ error: "no_session", message: "session expired, log in again" });
+      return reply
+        .code(401)
+        .send({ error: "no_session", message: "session expired, log in again" });
     }
-    const { rows } = await db.query("SELECT id, username, role FROM users WHERE id = $1", [result.userId]);
+    const { rows } = await db.query("SELECT id, username, role FROM users WHERE id = $1", [
+      result.userId,
+    ]);
     return session(reply, rows[0], result.token);
   });
 

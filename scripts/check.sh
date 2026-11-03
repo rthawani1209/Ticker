@@ -34,7 +34,7 @@ echo "== backend"
 (
   cd backend
   [ -d node_modules ] || npm ci --silent
-  npm run -s typecheck && npm run -s build && rm -rf dist &&
+  npm run -s lint && npm run -s format:check > /dev/null && npm run -s typecheck && npm run -s build && rm -rf dist &&
     TICKER_ENGINE=../engine/build-check/g++-release/ticker-engine REDIS_URL=${REDIS_URL:-redis://localhost:6379} \
     npx vitest run > ../engine/build-check/vitest.log 2>&1
 ) || { tail -60 engine/build-check/vitest.log; exit 1; }

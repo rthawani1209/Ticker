@@ -18,12 +18,22 @@ import { OrderService } from "../src/orders.js";
 import { loadSymbols } from "../src/symbols.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-export const ENGINE_BIN = process.env.TICKER_ENGINE ?? path.join(root, "engine/build/ticker-engine");
+export const ENGINE_BIN =
+  process.env.TICKER_ENGINE ?? path.join(root, "engine/build/ticker-engine");
 const TOKEN = 5150n;
 
 export function startEngine(): Promise<{ proc: ChildProcess; port: number }> {
   if (!existsSync(ENGINE_BIN)) throw new Error(`build the engine first: ${ENGINE_BIN} not found`);
-  const proc = spawn(ENGINE_BIN, ["--host", "127.0.0.1", "--port", "0", "--token", String(TOKEN), "--shards", "1"]);
+  const proc = spawn(ENGINE_BIN, [
+    "--host",
+    "127.0.0.1",
+    "--port",
+    "0",
+    "--token",
+    String(TOKEN),
+    "--shards",
+    "1",
+  ]);
   return new Promise((resolve, reject) => {
     proc.on("error", reject);
     proc.stdout!.once("data", (d: Buffer) => {
@@ -38,7 +48,8 @@ export async function startBackend() {
   const config = loadConfig({
     ...process.env,
     NODE_ENV: "test",
-    DATABASE_URL: process.env.TEST_DATABASE_URL ?? "postgres://ticker:ticker@localhost:5432/ticker_test",
+    DATABASE_URL:
+      process.env.TEST_DATABASE_URL ?? "postgres://ticker:ticker@localhost:5432/ticker_test",
   });
   const db = createPool(config.DATABASE_URL);
   await db.query("DROP SCHEMA public CASCADE; CREATE SCHEMA public");
@@ -46,7 +57,12 @@ export async function startBackend() {
 
   const engine = await startEngine();
   const symbols = await loadSymbols(db);
-  const bridge = new EngineBridge({ host: "127.0.0.1", port: engine.port, token: TOKEN, refPrices: symbols.map((s) => s.refPrice) });
+  const bridge = new EngineBridge({
+    host: "127.0.0.1",
+    port: engine.port,
+    token: TOKEN,
+    refPrices: symbols.map((s) => s.refPrice),
+  });
   await bridge.start();
   const orders = new OrderService(db, bridge);
   orders.on("error", (err) => console.error("event apply failed", err));
@@ -54,9 +70,20 @@ export async function startBackend() {
   const redis = process.env.REDIS_URL ? new Redis(process.env.REDIS_URL) : undefined;
   if (redis) await redis.flushdb();
   // Tests call leaderboard.refresh() themselves instead of running the timer.
-  const leaderboard = new Leaderboard(db, orders.marks, symbols.map((s) => s.id), redis, 60);
+  const leaderboard = new Leaderboard(
+    db,
+    orders.marks,
+    symbols.map((s) => s.id),
+    redis,
+    60,
+  );
   const app = await buildApp({
-    config, db, redis, bridge, orders, leaderboard,
+    config,
+    db,
+    redis,
+    bridge,
+    orders,
+    leaderboard,
     tokens: new Tokens(config.JWT_SECRET, db),
     symbols,
     symbolsByTicker: new Map(symbols.map((s) => [s.ticker, s])),
@@ -64,7 +91,12 @@ export async function startBackend() {
   await app.ready();
 
   return {
-    app, db, bridge, orders, leaderboard, engine,
+    app,
+    db,
+    bridge,
+    orders,
+    leaderboard,
+    engine,
     async stop() {
       bridge.stop();
       await app.close();
@@ -96,7 +128,13 @@ export async function signUp(b: Backend, name = `user${++n}_${process.pid}`) {
     "SELECT p.id FROM portfolios p JOIN leagues l ON l.id = p.league_id WHERE l.is_practice AND p.user_id = $1",
     [body.user.id],
   );
-  return { id: body.user.id as number, portfolio: rows[0].id as number, token: body.accessToken as string, cookie, name };
+  return {
+    id: body.user.id as number,
+    portfolio: rows[0].id as number,
+    token: body.accessToken as string,
+    cookie,
+    name,
+  };
 }
 
 export const auth = (token: string) => ({ authorization: `Bearer ${token}` });

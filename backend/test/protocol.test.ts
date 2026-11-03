@@ -8,8 +8,15 @@ import { PRICE_BAND_BPS } from "../src/ledger.js";
 describe("engine protocol", () => {
   it("lays out a new order like the C++ struct", () => {
     const b = p.newOrder({
-      account: 42, clOrdId: 7, symbol: 3, side: p.Side.Sell, ordType: p.OrdType.Limit, tif: p.TIF.IOC,
-      price: 10_050, stopPrice: 0, qty: 25,
+      account: 42,
+      clOrdId: 7,
+      symbol: 3,
+      side: p.Side.Sell,
+      ordType: p.OrdType.Limit,
+      tif: p.TIF.IOC,
+      price: 10_050,
+      stopPrice: 0,
+      qty: 25,
     });
     expect(b.length).toBe(48);
     expect([...b.subarray(0, 4)]).toEqual([48, 0, p.MsgType.NewOrder, p.VERSION]);
@@ -44,8 +51,16 @@ describe("engine protocol", () => {
     b.writeUInt32LE(4, 52);
     const m = p.decode(b);
     expect(m).toMatchObject({
-      kind: "event", type: p.EventType.Fill, side: p.Side.Buy, symbol: 2, account: 99,
-      orderId: 3 * 2 ** 40 + 5, clOrdId: 11, price: 9_990, qty: 10, leaves: 4,
+      kind: "event",
+      type: p.EventType.Fill,
+      side: p.Side.Buy,
+      symbol: 2,
+      account: 99,
+      orderId: 3 * 2 ** 40 + 5,
+      clOrdId: 11,
+      price: 9_990,
+      qty: 10,
+      leaves: 4,
     });
   });
 
@@ -65,7 +80,10 @@ describe("engine protocol", () => {
 describe("engine config", () => {
   it("uses the same price band as the engine", () => {
     // The ledger reserves market orders at the band edge, so the two must agree.
-    const header = readFileSync(new URL("../../engine/include/ticker/config.hpp", import.meta.url), "utf8");
+    const header = readFileSync(
+      new URL("../../engine/include/ticker/config.hpp", import.meta.url),
+      "utf8",
+    );
     const m = /band_bps = ([\d']+);/.exec(header);
     expect(m, "band_bps not found in config.hpp").not.toBeNull();
     expect(PRICE_BAND_BPS).toBe(Number(m![1]!.replaceAll("'", "")));

@@ -131,7 +131,11 @@ export class EngineBridge extends EventEmitter {
   private onEvent(e: p.EngineEvent): void {
     const book = this.books[e.symbol];
     const now = Date.now();
-    if (e.session === 0 || e.type === p.EventType.SnapshotLevel || e.type === p.EventType.SnapshotEnd) {
+    if (
+      e.session === 0 ||
+      e.type === p.EventType.SnapshotLevel ||
+      e.type === p.EventType.SnapshotEnd
+    ) {
       book?.apply(e, now);
       this.emit("market", e);
       return;
@@ -173,7 +177,12 @@ export class EngineBridge extends EventEmitter {
   // Asks the engine to cancel. Success shows up as a Cancelled event for the order;
   // this resolves with a Reject if the engine refused (e.g. the order already filled),
   // or null otherwise.
-  cancel(account: number, orderId: number, symbol: number, timeoutMs = 2000): Promise<p.EngineEvent | null> {
+  cancel(
+    account: number,
+    orderId: number,
+    symbol: number,
+    timeoutMs = 2000,
+  ): Promise<p.EngineEvent | null> {
     const id = this.nextCancelId++;
     return new Promise((resolve, reject) => {
       try {

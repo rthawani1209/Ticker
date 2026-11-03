@@ -44,7 +44,11 @@ declare module "fastify" {
 }
 
 export async function buildApp(deps: Deps, opts: { logger?: boolean } = {}) {
-  const app = Fastify({ logger: opts.logger ?? false, trustProxy: deps.config.TRUST_PROXY, bodyLimit: 16 * 1024 });
+  const app = Fastify({
+    logger: opts.logger ?? false,
+    trustProxy: deps.config.TRUST_PROXY,
+    bodyLimit: 16 * 1024,
+  });
   app.decorate("deps", deps);
 
   await app.register(helmet);
@@ -61,16 +65,21 @@ export async function buildApp(deps: Deps, opts: { logger?: boolean } = {}) {
   app.decorateRequest("user", null as unknown as AccessClaims);
   app.decorate("authenticate", async (req: FastifyRequest, reply: FastifyReply) => {
     const header = req.headers.authorization;
-    const claims = header?.startsWith("Bearer ") ? await deps.tokens.verifyAccess(header.slice(7)) : null;
+    const claims = header?.startsWith("Bearer ")
+      ? await deps.tokens.verifyAccess(header.slice(7))
+      : null;
     if (!claims) {
-      await reply.code(401).send({ error: "unauthorized", message: "missing or expired access token" });
+      await reply
+        .code(401)
+        .send({ error: "unauthorized", message: "missing or expired access token" });
       return;
     }
     req.user = claims;
   });
 
   app.setErrorHandler((err, req, reply) => {
-    if (err instanceof ApiError) return reply.code(err.status).send({ error: err.code, message: err.message });
+    if (err instanceof ApiError)
+      return reply.code(err.status).send({ error: err.code, message: err.message });
     if (err instanceof ZodError) {
       return reply.code(400).send({
         error: "invalid_request",
@@ -107,9 +116,18 @@ export async function buildApp(deps: Deps, opts: { logger?: boolean } = {}) {
     async (scope) => {
       scope.addHook("preHandler", scope.authenticate);
       scope.get("/", async (req) => {
-        const { rows } = await deps.db.query("SELECT id, email, username, role, created_at FROM users WHERE id = $1", [req.user.userId]);
+        const { rows } = await deps.db.query(
+          "SELECT id, email, username, role, created_at FROM users WHERE id = $1",
+          [req.user.userId],
+        );
         const u = rows[0];
-        return { id: u.id, email: u.email, username: u.username, role: u.role, createdAt: u.created_at.toISOString() };
+        return {
+          id: u.id,
+          email: u.email,
+          username: u.username,
+          role: u.role,
+          createdAt: u.created_at.toISOString(),
+        };
       });
     },
     { prefix: "/v1/me" },

@@ -58,27 +58,45 @@ beforeAll(async () => {
 afterAll(() => b?.stop());
 
 type User = Awaited<ReturnType<typeof signUp>>;
-const place = (u: User, payload: object) => b.app.inject({ method: "POST", url: "/v1/orders", headers: auth(u.token), payload });
+const place = (u: User, payload: object) =>
+  b.app.inject({ method: "POST", url: "/v1/orders", headers: auth(u.token), payload });
 const get = (u: User, url: string) => b.app.inject({ url, headers: auth(u.token) });
-const post = (u: User, url: string, payload: object) => b.app.inject({ method: "POST", url, headers: auth(u.token), payload });
+const post = (u: User, url: string, payload: object) =>
+  b.app.inject({ method: "POST", url, headers: auth(u.token), payload });
 
 // The live cash and positions of a portfolio must match a replay of its fills.
 async function expectRebuildMatches(portfolioId: number) {
   await b.orders.settled();
-  const pf = (await b.db.query(
-    "SELECT pf.cash, l.starting_cash FROM portfolios pf JOIN leagues l ON l.id = pf.league_id WHERE pf.id = $1",
-    [portfolioId],
-  )).rows[0];
+  const pf = (
+    await b.db.query(
+      "SELECT pf.cash, l.starting_cash FROM portfolios pf JOIN leagues l ON l.id = pf.league_id WHERE pf.id = $1",
+      [portfolioId],
+    )
+  ).rows[0];
   const fills = await b.db.query(
     "SELECT symbol_id, side, price, qty, commission FROM fills WHERE portfolio_id = $1 ORDER BY id",
     [portfolioId],
   );
-  const replay = rebuild(pf.starting_cash, fills.rows.map((f) => ({ symbolId: f.symbol_id, side: f.side, price: f.price, qty: f.qty, commission: f.commission })));
+  const replay = rebuild(
+    pf.starting_cash,
+    fills.rows.map((f) => ({
+      symbolId: f.symbol_id,
+      side: f.side,
+      price: f.price,
+      qty: f.qty,
+      commission: f.commission,
+    })),
+  );
   expect(pf.cash).toBe(replay.cash);
-  const live = await b.db.query("SELECT symbol_id, qty, cost, realized FROM positions WHERE portfolio_id = $1", [portfolioId]);
+  const live = await b.db.query(
+    "SELECT symbol_id, qty, cost, realized FROM positions WHERE portfolio_id = $1",
+    [portfolioId],
+  );
   expect(live.rows.length).toBe(replay.positions.size);
   for (const r of live.rows) {
-    expect({ qty: r.qty, cost: r.cost, realized: r.realized }).toEqual(replay.positions.get(r.symbol_id));
+    expect({ qty: r.qty, cost: r.cost, realized: r.realized }).toEqual(
+      replay.positions.get(r.symbol_id),
+    );
   }
   return fills.rows.length;
 }
@@ -90,7 +108,9 @@ describe("buying power", () => {
     expect(tooBig.statusCode).toBe(422);
     expect(tooBig.json().error).toBe("insufficient_funds");
 
-    expect((await place(u, { symbol: "NOVA", side: "buy", price: 139_00, qty: 700 })).statusCode).toBe(201); // $97,300 rests
+    expect(
+      (await place(u, { symbol: "NOVA", side: "buy", price: 139_00, qty: 700 })).statusCode,
+    ).toBe(201); // $97,300 rests
     const second = await place(u, { symbol: "NOVA", side: "buy", price: 139_00, qty: 30 }); // $4,170 more
     expect(second.json().error).toBe("insufficient_funds");
   });
@@ -98,7 +118,9 @@ describe("buying power", () => {
   it("holds margin against shorts", async () => {
     const u = await signUp(b);
     // A $37,500 short needs 50% of it ($18,750) on top of the sale proceeds.
-    expect((await place(u, { symbol: "KILN", side: "sell", price: 25_50, qty: 1500 })).statusCode).toBe(201);
+    expect(
+      (await place(u, { symbol: "KILN", side: "sell", price: 25_50, qty: 1500 })).statusCode,
+    ).toBe(201);
     // $255,000 more would need $127,500.
     const big = await place(u, { symbol: "KILN", side: "sell", price: 25_50, qty: 10_000 });
     expect(big.json().error).toBe("insufficient_funds");
@@ -140,7 +162,11 @@ describe("market orders", () => {
     expect(after.cash).toBeGreaterThanOrEqual(0);
 
     expect(cheap.json().status).toBe("open");
-    await b.app.inject({ method: "DELETE", url: `/v1/orders/${wall.json().id}`, headers: auth(seller.token) });
+    await b.app.inject({
+      method: "DELETE",
+      url: `/v1/orders/${wall.json().id}`,
+      headers: auth(seller.token),
+    });
   });
 });
 
@@ -164,7 +190,12 @@ describe("leagues", () => {
     });
     expect(res.statusCode).toBe(201);
     strict = res.json();
-    expect(strict).toMatchObject({ name: "No shorts club", startingCash: 50_000_00, members: 1, isOwner: true });
+    expect(strict).toMatchObject({
+      name: "No shorts club",
+      startingCash: 50_000_00,
+      members: 1,
+      isOwner: true,
+    });
     expect(strict.inviteCode).toMatch(/^[A-Z2-9]{8}$/);
   });
 
@@ -173,7 +204,9 @@ describe("leagues", () => {
     expect(res.statusCode).toBe(201);
     expect(res.json()).toMatchObject({ id: strict.id, members: 2, isOwner: false });
     expect(res.json().inviteCode).toBeUndefined();
-    expect((await post(member, "/v1/leagues/join", { code: strict.inviteCode })).statusCode).toBe(200);
+    expect((await post(member, "/v1/leagues/join", { code: strict.inviteCode })).statusCode).toBe(
+      200,
+    );
     expect((await post(member, "/v1/leagues/join", { code: "ZZZZZZZZ" })).statusCode).toBe(404);
 
     const mine = (await get(member, "/v1/leagues")).json();
@@ -187,36 +220,78 @@ describe("leagues", () => {
     expect((await get(outsider, `/v1/leagues/${strict.id}`)).statusCode).toBe(404);
     expect((await get(outsider, `/v1/leagues/${strict.id}/leaderboard`)).statusCode).toBe(404);
     expect((await get(outsider, `/v1/positions?league=${strict.id}`)).statusCode).toBe(404);
-    const order = await place(outsider, { symbol: "MESA", side: "buy", price: 180_00, qty: 1, league: strict.id });
+    const order = await place(outsider, {
+      symbol: "MESA",
+      side: "buy",
+      price: 180_00,
+      qty: 1,
+      league: strict.id,
+    });
     expect(order.json().error).toBe("not_a_member");
   });
 
   it("enforces the league's rules", async () => {
     const inLeague = (payload: object) => place(member, { ...payload, league: strict.id });
-    expect((await inLeague({ symbol: "MESA", side: "buy", type: "market", qty: 1 })).json().error).toBe("order_type_not_allowed");
-    expect((await inLeague({ symbol: "MESA", side: "sell", price: 190_00, qty: 1 })).json().error).toBe("short_not_allowed");
-    expect((await inLeague({ symbol: "MESA", side: "buy", price: 180_00, qty: 101 })).json().error).toBe("position_limit");
-    expect((await inLeague({ symbol: "MESA", side: "buy", price: 180_00, qty: 60 })).statusCode).toBe(201);
+    expect(
+      (await inLeague({ symbol: "MESA", side: "buy", type: "market", qty: 1 })).json().error,
+    ).toBe("order_type_not_allowed");
+    expect(
+      (await inLeague({ symbol: "MESA", side: "sell", price: 190_00, qty: 1 })).json().error,
+    ).toBe("short_not_allowed");
+    expect(
+      (await inLeague({ symbol: "MESA", side: "buy", price: 180_00, qty: 101 })).json().error,
+    ).toBe("position_limit");
+    expect(
+      (await inLeague({ symbol: "MESA", side: "buy", price: 180_00, qty: 60 })).statusCode,
+    ).toBe(201);
     // 60 resting + 50 more is past the limit too.
-    expect((await inLeague({ symbol: "MESA", side: "buy", price: 180_00, qty: 50 })).json().error).toBe("position_limit");
+    expect(
+      (await inLeague({ symbol: "MESA", side: "buy", price: 180_00, qty: 50 })).json().error,
+    ).toBe("position_limit");
   });
 
   it("refuses orders before a league starts", async () => {
-    const later = (await post(owner, "/v1/leagues", {
-      name: "Starts next week",
-      startsAt: new Date(Date.now() + 7 * 86_400_000).toISOString(),
-    })).json();
-    const res = await place(owner, { symbol: "MESA", side: "buy", price: 180_00, qty: 1, league: later.id });
+    const later = (
+      await post(owner, "/v1/leagues", {
+        name: "Starts next week",
+        startsAt: new Date(Date.now() + 7 * 86_400_000).toISOString(),
+      })
+    ).json();
+    const res = await place(owner, {
+      symbol: "MESA",
+      side: "buy",
+      price: 180_00,
+      qty: 1,
+      league: later.id,
+    });
     expect(res.statusCode).toBe(403);
     expect(res.json().error).toBe("league_closed");
   });
 
   it("charges commission on fills and keeps positions per league", async () => {
-    const league = (await post(owner, "/v1/leagues", { name: "Fees", commissionCents: 1_00, commissionBps: 10 })).json();
+    const league = (
+      await post(owner, "/v1/leagues", { name: "Fees", commissionCents: 1_00, commissionBps: 10 })
+    ).json();
     await post(member, "/v1/leagues/join", { code: league.inviteCode });
 
-    expect((await place(owner, { symbol: "BRKL", side: "sell", price: 74_50, qty: 50, league: league.id })).statusCode).toBe(201);
-    const buy = await place(member, { symbol: "BRKL", side: "buy", price: 74_50, qty: 50, league: league.id });
+    expect(
+      (
+        await place(owner, {
+          symbol: "BRKL",
+          side: "sell",
+          price: 74_50,
+          qty: 50,
+          league: league.id,
+        })
+      ).statusCode,
+    ).toBe(201);
+    const buy = await place(member, {
+      symbol: "BRKL",
+      side: "buy",
+      price: 74_50,
+      qty: 50,
+      league: league.id,
+    });
     expect(buy.json()).toMatchObject({ status: "filled", league: league.id });
     await b.orders.settled();
 
@@ -224,7 +299,15 @@ describe("leagues", () => {
     const seller = (await get(owner, `/v1/positions?league=${league.id}`)).json();
     expect(seller.cash).toBe(100_000_00 + 3_725_00 - fee);
     expect(seller.positions).toEqual([
-      { symbol: "BRKL", qty: -50, avgPrice: 74_50, mark: 74_50, marketValue: -3_725_00, unrealized: 0, realized: -fee },
+      {
+        symbol: "BRKL",
+        qty: -50,
+        avgPrice: 74_50,
+        mark: 74_50,
+        marketValue: -3_725_00,
+        unrealized: 0,
+        realized: -fee,
+      },
     ]);
     const buyer = (await get(member, `/v1/positions?league=${league.id}`)).json();
     expect(buyer.cash).toBe(100_000_00 - 3_725_00 - fee);
@@ -247,26 +330,49 @@ describe("self-trade prevention", () => {
     const league = (await post(owner, "/v1/leagues", { name: "Wash trade check" })).json();
 
     // Selling cheap from practice and buying in the league would move money between them.
-    const practiceSell = await place(owner, { symbol: "BRKL", side: "sell", price: 70_00, qty: 100 });
+    const practiceSell = await place(owner, {
+      symbol: "BRKL",
+      side: "sell",
+      price: 70_00,
+      qty: 100,
+    });
     expect(practiceSell.json().status).toBe("open");
-    const leagueBuy = await place(owner, { symbol: "BRKL", side: "buy", price: 70_00, qty: 100, league: league.id, tif: "ioc" });
+    const leagueBuy = await place(owner, {
+      symbol: "BRKL",
+      side: "buy",
+      price: 70_00,
+      qty: 100,
+      league: league.id,
+      tif: "ioc",
+    });
     expect(leagueBuy.statusCode).toBe(201);
-    expect(leagueBuy.json()).toMatchObject({ status: "cancelled", filledQty: 0, rejectReason: "self_trade" });
+    expect(leagueBuy.json()).toMatchObject({
+      status: "cancelled",
+      filledQty: 0,
+      rejectReason: "self_trade",
+    });
 
     // Someone else can still take the order.
     const fair = await place(other, { symbol: "BRKL", side: "buy", price: 70_00, qty: 100 });
     expect(fair.json().status).toBe("filled");
     await b.orders.settled();
-    expect((await get(owner, `/v1/positions?league=${league.id}`)).json()).toMatchObject({ cash: 100_000_00, positions: [] });
+    expect((await get(owner, `/v1/positions?league=${league.id}`)).json()).toMatchObject({
+      cash: 100_000_00,
+      positions: [],
+    });
   });
 });
 
 describe("fill history", () => {
   it("rebuilds every balance from fills after a run of random trades", async () => {
     const traders = [await signUp(b), await signUp(b), await signUp(b), await signUp(b)];
-    const books = [{ symbol: "VYNE", ref: 97_00 }, { symbol: "ORBT", ref: 310_00 }, { symbol: "HELX", ref: 58_00 }];
+    const books = [
+      { symbol: "VYNE", ref: 97_00 },
+      { symbol: "ORBT", ref: 310_00 },
+      { symbol: "HELX", ref: 58_00 },
+    ];
     let seed = 7;
-    const rand = (n: number) => ((seed = (seed * 1_103_515_245 + 12_345) % 2 ** 31) % n);
+    const rand = (n: number) => (seed = (seed * 1_103_515_245 + 12_345) % 2 ** 31) % n;
 
     let trades = 0;
     for (let i = 0; i < 60; i++) {
@@ -278,13 +384,23 @@ describe("fill history", () => {
       const qty = 1 + rand(20);
       const rest = await place(maker, { symbol: book.symbol, side, price, qty });
       expect(rest.statusCode).toBe(201);
-      const hit = await place(taker, { symbol: book.symbol, side: side === "buy" ? "sell" : "buy", price, qty: 1 + rand(qty), tif: "ioc" });
+      const hit = await place(taker, {
+        symbol: book.symbol,
+        side: side === "buy" ? "sell" : "buy",
+        price,
+        qty: 1 + rand(qty),
+        tif: "ioc",
+      });
       expect(hit.statusCode).toBe(201);
       trades += hit.json().filledQty > 0 ? 1 : 0;
       // Pull whatever is left so the book doesn't pile up.
       const left = await get(maker, `/v1/orders/${rest.json().id}`);
       if (["open", "partially_filled"].includes(left.json().status)) {
-        await b.app.inject({ method: "DELETE", url: `/v1/orders/${rest.json().id}`, headers: auth(maker.token) });
+        await b.app.inject({
+          method: "DELETE",
+          url: `/v1/orders/${rest.json().id}`,
+          headers: auth(maker.token),
+        });
       }
       await new Promise((r) => setTimeout(r, 50)); // stay under the 20 orders/s limit
     }
@@ -304,7 +420,14 @@ describe("leaderboard", () => {
     for (const u of [bull, bear]) await post(u, "/v1/leagues/join", { code: league.inviteCode });
     const trade = async (buyer: User, seller: User, price: number, qty: number) => {
       await place(seller, { symbol: "MESA", side: "sell", price, qty, league: league.id });
-      const res = await place(buyer, { symbol: "MESA", side: "buy", price, qty, tif: "ioc", league: league.id });
+      const res = await place(buyer, {
+        symbol: "MESA",
+        side: "buy",
+        price,
+        qty,
+        tif: "ioc",
+        league: league.id,
+      });
       expect(res.json().status).toBe("filled");
     };
 

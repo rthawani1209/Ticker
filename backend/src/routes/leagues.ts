@@ -22,7 +22,10 @@ const NewLeague = z
     maxPosition: z.number().int().positive().max(10_000_000).nullable().default(null),
     allowShort: z.boolean().default(true),
     marginBps: z.number().int().min(10_000).max(50_000).default(15_000),
-    allowedTypes: z.array(z.enum(ORDER_TYPES)).min(1).default([...ORDER_TYPES]),
+    allowedTypes: z
+      .array(z.enum(ORDER_TYPES))
+      .min(1)
+      .default([...ORDER_TYPES]),
   })
   .refine((l) => !l.endsAt || new Date(l.endsAt) > new Date(l.startsAt ?? Date.now()), {
     path: ["endsAt"],
@@ -66,30 +69,49 @@ export default async function leagueRoutes(app: FastifyInstance) {
     return view(rows[0]);
   };
 
-  app.post("/", { config: { rateLimit: { max: 10, timeWindow: 3_600_000 } } }, async (req, reply) => {
-    const body = NewLeague.parse(req.body);
-    const client = await db.connect();
-    try {
-      await client.query("BEGIN");
-      const { rows } = await client.query(
-        `INSERT INTO leagues (name, owner_id, invite_code, starts_at, ends_at, starting_cash, commission_cents,
+  app.post(
+    "/",
+    { config: { rateLimit: { max: 10, timeWindow: 3_600_000 } } },
+    async (req, reply) => {
+      const body = NewLeague.parse(req.body);
+      const client = await db.connect();
+      try {
+        await client.query("BEGIN");
+        const { rows } = await client.query(
+          `INSERT INTO leagues (name, owner_id, invite_code, starts_at, ends_at, starting_cash, commission_cents,
            commission_bps, max_position, allow_short, margin_bps, allowed_types)
          VALUES ($1, $2, $3, coalesce($4::timestamptz, now()), $5, $6, $7, $8, $9, $10, $11, $12::order_type[])
          RETURNING id`,
-        [body.name, req.user.userId, inviteCode(), body.startsAt ?? null, body.endsAt ?? null, body.startingCash,
-          body.commissionCents, body.commissionBps, body.maxPosition, body.allowShort, body.marginBps, body.allowedTypes],
-      );
-      await client.query("INSERT INTO portfolios (league_id, user_id, cash) VALUES ($1, $2, $3)", [rows[0].id, req.user.userId, body.startingCash]);
-      await client.query("COMMIT");
-      await audit(db, req.user.userId, "league_create", { leagueId: rows[0].id }, req.ip);
-      return reply.code(201).send(await fetchLeague(rows[0].id, req.user.userId));
-    } catch (err) {
-      await client.query("ROLLBACK");
-      throw err;
-    } finally {
-      client.release();
-    }
-  });
+          [
+            body.name,
+            req.user.userId,
+            inviteCode(),
+            body.startsAt ?? null,
+            body.endsAt ?? null,
+            body.startingCash,
+            body.commissionCents,
+            body.commissionBps,
+            body.maxPosition,
+            body.allowShort,
+            body.marginBps,
+            body.allowedTypes,
+          ],
+        );
+        await client.query(
+          "INSERT INTO portfolios (league_id, user_id, cash) VALUES ($1, $2, $3)",
+          [rows[0].id, req.user.userId, body.startingCash],
+        );
+        await client.query("COMMIT");
+        await audit(db, req.user.userId, "league_create", { leagueId: rows[0].id }, req.ip);
+        return reply.code(201).send(await fetchLeague(rows[0].id, req.user.userId));
+      } catch (err) {
+        await client.query("ROLLBACK");
+        throw err;
+      } finally {
+        client.release();
+      }
+    },
+  );
 
   app.get("/", async (req) => {
     const { rows } = await db.query(
@@ -104,24 +126,40 @@ export default async function leagueRoutes(app: FastifyInstance) {
 
   app.get("/:id", async (req) => fetchLeague(Id.parse(req.params).id, req.user.userId));
 
-  app.post("/join", { config: { rateLimit: { max: 20, timeWindow: 60_000 } } }, async (req, reply) => {
-    const { code } = z.object({ code: z.string().trim().toUpperCase().length(8) }).parse(req.body);
-    const { rows } = await db.query("SELECT id, starting_cash, ends_at FROM leagues WHERE invite_code = $1", [code]);
-    const league = rows[0];
-    if (!league) throw new ApiError(404, "bad_code", "no league with that code");
-    if (league.ends_at && league.ends_at <= new Date()) throw new ApiError(403, "league_closed", "that league has ended");
-    const joined = await db.query(
-      "INSERT INTO portfolios (league_id, user_id, cash) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING RETURNING id",
-      [league.id, req.user.userId, league.starting_cash],
-    );
-    if (joined.rows[0]) await audit(db, req.user.userId, "league_join", { leagueId: league.id }, req.ip);
-    return reply.code(joined.rows[0] ? 201 : 200).send(await fetchLeague(league.id, req.user.userId));
-  });
+  app.post(
+    "/join",
+    { config: { rateLimit: { max: 20, timeWindow: 60_000 } } },
+    async (req, reply) => {
+      const { code } = z
+        .object({ code: z.string().trim().toUpperCase().length(8) })
+        .parse(req.body);
+      const { rows } = await db.query(
+        "SELECT id, starting_cash, ends_at FROM leagues WHERE invite_code = $1",
+        [code],
+      );
+      const league = rows[0];
+      if (!league) throw new ApiError(404, "bad_code", "no league with that code");
+      if (league.ends_at && league.ends_at <= new Date())
+        throw new ApiError(403, "league_closed", "that league has ended");
+      const joined = await db.query(
+        "INSERT INTO portfolios (league_id, user_id, cash) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING RETURNING id",
+        [league.id, req.user.userId, league.starting_cash],
+      );
+      if (joined.rows[0])
+        await audit(db, req.user.userId, "league_join", { leagueId: league.id }, req.ip);
+      return reply
+        .code(joined.rows[0] ? 201 : 200)
+        .send(await fetchLeague(league.id, req.user.userId));
+    },
+  );
 
   app.get("/:id/leaderboard", async (req) => {
     const { id } = Id.parse(req.params);
     const q = z
-      .object({ by: z.enum(["return", "sharpe"]).default("return"), limit: z.coerce.number().int().min(1).max(200).default(50) })
+      .object({
+        by: z.enum(["return", "sharpe"]).default("return"),
+        limit: z.coerce.number().int().min(1).max(200).default(50),
+      })
       .parse(req.query);
     await fetchLeague(id, req.user.userId); // members only
     return leaderboard.top(id, q.by, q.limit);

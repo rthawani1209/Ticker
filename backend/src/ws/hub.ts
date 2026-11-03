@@ -48,11 +48,25 @@ export default async function wsRoutes(app: FastifyInstance) {
     const ticker = symbols[e.symbol]?.ticker;
     if (!ticker) return;
     if (e.type === p.EventType.Trade) {
-      publish(`trades:${ticker}`, { price: e.price, qty: e.qty, side: e.side === p.Side.Buy ? "buy" : "sell", tradeId: e.tradeId, time: Date.now() });
+      publish(`trades:${ticker}`, {
+        price: e.price,
+        qty: e.qty,
+        side: e.side === p.Side.Buy ? "buy" : "sell",
+        tradeId: e.tradeId,
+        time: Date.now(),
+      });
     } else if (e.type === p.EventType.BookDelta) {
-      publish(`book:${ticker}`, { side: e.side === p.Side.Buy ? "bid" : "ask", price: e.price, qty: e.levelQty });
+      publish(`book:${ticker}`, {
+        side: e.side === p.Side.Buy ? "bid" : "ask",
+        price: e.price,
+        qty: e.levelQty,
+      });
     } else if (e.type === p.EventType.TradingStatus) {
-      publish("status", { ticker, halted: e.reason === 1, resumesAt: e.reason === 1 ? e.levelQty / 1e6 : null });
+      publish("status", {
+        ticker,
+        halted: e.reason === 1,
+        resumesAt: e.reason === 1 ? e.levelQty / 1e6 : null,
+      });
     }
   };
   bridge.on("market", onMarket);
