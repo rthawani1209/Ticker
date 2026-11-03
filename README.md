@@ -24,7 +24,7 @@ Ticker/
 ├── market-sim/    Python trading bots, news engine and scenario cases
 ├── frontend/      Next.js web app
 ├── sdk/python/    starter kit for writing your own trading bot (coming)
-├── infra/         Docker Compose and AWS deploy (coming)
+├── infra/         Docker Compose (coming)
 ├── scripts/       check.sh (runs everything CI runs), bench.sh (writes docs/results/)
 └── docs/          architecture, interview notes, claims with proof, benchmark results
 ```

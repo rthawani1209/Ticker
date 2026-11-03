@@ -26,8 +26,8 @@ Status: **done** = built and proven; **partial** = built, proof or number still 
 | epoll TCP server, one matching thread per shard | done | `engine/src/server/`; `ServerTest.*` | `ctest --test-dir engine/build -R ServerTest` | |
 | Compact fixed-size binary protocol | done | `protocol.hpp` static_asserts; `docs/protocol.md`; matching size tests in Python and TypeScript | `ctest --test-dir engine/build -R Protocol` | **NewOrder = 48 bytes** (Replace is 40) |
 | Journal with byte-identical replay | done | `JournalTest.ReplayIsByteIdentical`, `ServerTest.RestartRecoversBookFromJournal`, `ticker-replay` | `ctest --test-dir engine/build -R Journal` | |
-| Replay of a recorded trading day | planned (day 11) | | | |
-| Fuzz target for the message parser | partial | `Protocol.FuzzParser` (200k random buffers); libFuzzer target planned (day 11) | `ctest --test-dir engine/build -R Protocol` | |
+| Replay of a recorded trading day | planned (day 12) | | | |
+| Fuzz target for the message parser | partial | `Protocol.FuzzParser` (200k random buffers); libFuzzer target planned (day 12) | `ctest --test-dir engine/build -R Protocol` | |
 
 ## Market simulator (Python)
 
@@ -36,9 +36,8 @@ Status: **done** = built and proven; **partial** = built, proof or number still 
 | Market-maker, momentum, noise and news-trader bots | done | `market-sim/ticker_sim/bots/`; `market-sim/tests/test_bots.py` | `cd market-sim && python -m pytest` | |
 | News engine with scheduled and surprise headlines | done | `news.py`; `tests/test_news.py` | same | |
 | Scenario cases (earnings week, crash, meme rally, rate shock) | done | `market-sim/scenarios/*.toml`; `tests/test_scenarios.py` | `python -m ticker_sim --list` | 5 cases |
-| ETF arbitrage scenario | planned (day 8) | | | |
 | Markets stay active with no users | done | `test_engine_integration.py::test_calm_market_trades` | `cd market-sim && python -m pytest tests/test_engine_integration.py` | |
-| asyncio + NumPy price models | partial | asyncio done; NumPy models planned (day 6-7) | | |
+| asyncio + NumPy price models | partial | asyncio done; NumPy models planned (day 10) | | |
 
 ## Gateway (TypeScript)
 
@@ -51,9 +50,9 @@ Status: **done** = built and proven; **partial** = built, proof or number still 
 | Zod validation on every input, parameterized SQL only | done | `backend/src/routes/*.ts`; `validates input` tests | same | |
 | Audit trail of logins, orders and cancels | done | `audit_log` table; `refresh_reuse` check in `auth.test.ts` | same | |
 | Integration tests against real Postgres and Redis | done | `backend/test/harness.ts`; `.github/workflows/backend.yml` | same | 53 tests |
-| Redis pub/sub fan-out to WebSocket servers | planned (day 6-7) | | | |
-| [X] ms WebSocket delay | planned (day 6-7) | | | |
-| [X] ms p99 end-to-end under load (500 users + 50 bots) | planned (day 11) | | | |
+| Redis pub/sub fan-out to WebSocket servers | planned (day 10) | | | |
+| [X] ms WebSocket delay | planned (day 10) | | | |
+| [X] ms p99 end-to-end under load (500 users + 50 bots) | planned (day 12) | | | |
 
 ## Ledger and leagues (TypeScript)
 
@@ -68,9 +67,9 @@ Status: **done** = built and proven; **partial** = built, proof or number still 
 | League rules: commissions, position limits, allowed order types, shorting on/off | done | `002_ledger.sql`, `checkOrder()`; `enforces the league's rules`, `charges commission on fills` | same | |
 | Live leaderboard by return, refreshed every second, in Redis sorted sets | done | `backend/src/leaderboard.ts`; `leaderboard` test | same | 1 s refresh |
 | Sharpe ratio leaderboard | done | `sharpeRatio()` in `leaderboard.ts` (checked against a hand calculation); `ranks ... by Sharpe` test | same | annualized from 1-minute equity snapshots, risk-free rate 0 |
-| Max drawdown, win rate, return chart | planned (day 8) | | | |
-| Assignments and grading | planned (day 9) | | | |
+| Max drawdown, win rate, return chart | planned (day 10) | | | |
+| Assignments and grading | planned (day 11) | | | |
 
 ## Still to come
 
-Trading UI (days 7-8); classroom tools, badges and the bot API (day 9); fair-play detection and the AI coach (day 10); load tests and security scans (day 11); AWS deploy (day 12). Rows get added here as each one lands.
+Trade screen and bracket orders (day 9); Redis fan-out, WebSocket delay, NumPy models, Portfolio and League screens (day 10); roles, professor tools, assignments, bot API keys, Python starter kit and fair-play detection (day 11); Docker Compose, load test, Playwright, libFuzzer, CodeQL and the replay test (day 12). Rows get added here as each one lands. Cut on 2026-11-03 and not claimed: Google sign-in, 2FA, the AI coach, admin console, badges, notifications, News and Bot console screens, practice reset, market sessions, ETF arbitrage scenario, device/IP clustering, data export/delete, engine drop-copy, Under-the-hood and overload pages, ZAP, and AWS.
