@@ -56,7 +56,10 @@ export function SiteHeader() {
           ))}
         </nav>
         <span className={styles.grow} />
-        <ButtonLink href="#market">Live market</ButtonLink>
+        <Link href="/login" className={styles.signin}>
+          Sign in
+        </Link>
+        <ButtonLink href="/trade?start=guest">Try $100k</ButtonLink>
         <button
           ref={button}
           type="button"

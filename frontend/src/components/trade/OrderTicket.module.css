@@ -1,0 +1,194 @@
+.ticket {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: var(--s-3) var(--s-4);
+}
+
+.sides {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border: 1px solid var(--line-strong);
+}
+
+.side {
+  min-height: 36px;
+  border: 0;
+  background: transparent;
+  color: var(--text-2);
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.side[data-side="buy"][aria-checked="true"] {
+  background: var(--up);
+  color: var(--on-signal);
+}
+
+.side[data-side="sell"][aria-checked="true"] {
+  background: var(--down);
+  color: var(--on-signal);
+}
+
+.types {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.type {
+  padding: 5px 9px;
+  border: 1px solid var(--line-strong);
+  background: transparent;
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.type[aria-checked="true"] {
+  border-color: var(--text);
+  background: var(--text);
+  color: var(--ink-0);
+}
+
+.fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--s-3);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.field input {
+  width: 100%;
+  min-height: 36px;
+  padding: 0 var(--s-3);
+  border: 1px solid var(--line-strong);
+  background: var(--ink-0);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* the active input is outlined in amber, like the mockup's terminal cursor */
+.field input:focus {
+  outline: none;
+  border-color: var(--you);
+  box-shadow: 0 0 0 1px var(--you);
+}
+
+.math {
+  margin: 0;
+  font-size: 12px;
+}
+
+.math div {
+  display: flex;
+  justify-content: space-between;
+  padding: 3px 0;
+}
+
+.math dt {
+  color: var(--text-3);
+}
+
+.math dd {
+  margin: 0;
+}
+
+.meter {
+  height: 3px;
+  background: var(--line);
+}
+
+.meter span {
+  display: block;
+  height: 100%;
+  background: var(--you);
+  transition: width var(--t-base);
+}
+
+.note {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-3);
+}
+
+.submit {
+  min-height: 46px;
+  border: 0;
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  clip-path: polygon(
+    0 0,
+    100% 0,
+    100% calc(100% - var(--chamfer)),
+    calc(100% - var(--chamfer)) 100%,
+    0 100%
+  );
+}
+
+.ticket[data-side="buy"] .submit {
+  background: var(--up);
+  color: var(--on-signal);
+}
+
+.ticket[data-side="sell"] .submit {
+  background: var(--down);
+  color: var(--on-signal);
+}
+
+.submit:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+.result {
+  min-height: 16px;
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-2);
+}
+
+.result[data-ok="false"] {
+  color: var(--down);
+}
+
+.result[data-ok="true"] {
+  color: var(--up);
+}
+
+.keys {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.keys kbd {
+  margin: 0 4px 0 10px;
+  padding: 1px 5px;
+  border: 1px solid var(--line-strong);
+  font: inherit;
+  color: var(--text-2);
+}
+
+.keys kbd:first-child {
+  margin-left: 0;
+}

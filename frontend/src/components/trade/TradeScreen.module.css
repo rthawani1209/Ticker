@@ -1,0 +1,287 @@
+/* Three columns like a trading terminal: watchlist, chart + blotter, ladder + ticket. */
+.screen {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr) 340px;
+  grid-template-rows: 60px minmax(0, 1fr);
+  grid-template-areas:
+    "top top top"
+    "watch main side";
+  height: 100dvh;
+  min-height: 640px;
+}
+
+.top {
+  grid-area: top;
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  padding: 0 var(--s-4);
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--ink-0) 92%, transparent);
+}
+
+.top a {
+  text-decoration: none;
+}
+
+.nav {
+  display: flex;
+  align-self: stretch;
+}
+
+.nav a {
+  display: flex;
+  align-items: center;
+  padding: 0 4px;
+  color: var(--text-2);
+  border-bottom: 2px solid transparent;
+}
+
+.nav a[aria-current="page"] {
+  color: var(--text);
+  border-bottom-color: var(--you);
+}
+
+.conn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.conn span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-3);
+}
+
+.conn[data-on="true"] span {
+  background: var(--up);
+  box-shadow: 0 0 8px var(--up);
+}
+
+.grow {
+  flex: 1;
+}
+
+.equity {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.equity strong {
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.who {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  font-size: 13px;
+}
+
+.who a,
+.who button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--you);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.watch {
+  grid-area: watch;
+  overflow-y: auto;
+  border-right: 1px solid var(--line);
+}
+
+.main {
+  grid-area: main;
+  display: grid;
+  grid-template-rows: auto minmax(240px, 1fr) minmax(180px, 34%);
+  min-width: 0;
+}
+
+.quote {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--s-3) var(--s-8);
+  padding: var(--s-4) var(--s-6) var(--s-3);
+}
+
+.sym {
+  margin: 4px 0 0;
+  font-family: var(--font-display);
+  font-size: 32px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.04em;
+}
+
+.last {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-3);
+}
+
+.last [data-direction="up"] {
+  color: var(--up);
+}
+
+.last [data-direction="down"] {
+  color: var(--down);
+}
+
+.bigPrice {
+  font-size: 34px;
+  line-height: 1;
+}
+
+.stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-1) 22px;
+  margin: 0;
+  font-size: 12px;
+}
+
+.stats div {
+  display: flex;
+  gap: 8px;
+}
+
+.stats dt {
+  color: var(--text-3);
+}
+
+.stats dd {
+  margin: 0;
+}
+
+.chart {
+  margin: 0 var(--s-6);
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--ink-1) 80%, transparent);
+}
+
+.blotter {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  margin-top: var(--s-4);
+  border-top: 1px solid var(--line);
+}
+
+.side {
+  grid-area: side;
+  display: grid;
+  grid-template-rows: minmax(250px, 1fr) auto;
+  overflow-y: auto;
+  border-left: 1px solid var(--line);
+  min-height: 0;
+}
+
+.ladder {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.panelHead {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--s-2);
+  padding: var(--s-3) var(--s-4) var(--s-2);
+}
+
+.notice {
+  overflow: hidden;
+  font-size: 11px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.notice[data-ok="true"] {
+  color: var(--up);
+}
+
+.notice[data-ok="false"] {
+  color: var(--down);
+}
+
+.ticket {
+  border-top: 1px solid var(--line-strong);
+  background: var(--ink-1);
+}
+
+/* Narrow screens: one column, ticket right under the quote so trading comes first. */
+@media (max-width: 1000px) {
+  .screen {
+    display: flex;
+    flex-direction: column;
+    height: auto;
+  }
+
+  .top {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    min-height: 60px;
+    gap: var(--s-3);
+  }
+
+  .nav,
+  .conn,
+  .who {
+    display: none;
+  }
+
+  .watch {
+    order: 5;
+    border-right: 0;
+    border-top: 1px solid var(--line);
+  }
+
+  /* quote, chart, then the ticket and ladder, then your account, then the watchlist */
+  .main {
+    display: contents;
+  }
+
+  .quote {
+    order: 1;
+  }
+
+  .chart {
+    order: 2;
+    height: 300px;
+    margin: 0 var(--s-4);
+  }
+
+  .side {
+    order: 3;
+    display: flex;
+    flex-direction: column;
+    border-left: 0;
+    overflow: visible;
+  }
+
+  .blotter {
+    order: 4;
+  }
+
+  .ladder {
+    max-height: 420px;
+  }
+}

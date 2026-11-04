@@ -25,3 +25,9 @@ The hero board shows whatever `/health` says is true. When the exchange is up it
 ```bash
 node scripts/record-replay.mjs 90
 ```
+
+## Trade screen
+
+`/trade` opens the trading screen if you have a session, or offers a guest account (`/trade?start=guest`, which the landing page's "Try it with $100k" uses). `/login` signs in or creates an account. The access token stays in memory and the API's httpOnly refresh cookie restores it after a reload.
+
+Market data and order entry share one WebSocket: `book:`, `trades:` and `me:orders` channels plus the `order` and `cancel` ops. Your portfolio, open orders and fills reload over REST when one of your orders changes. The chart starts from `/v1/market/:ticker/candles` (15-second bars) and folds in live trades. Click the bid side of the ladder to buy at that price, the ask side to sell, for the ticket's quantity. B and S pick a side and jump to the quantity, Esc cancels your open orders in the stock on screen.

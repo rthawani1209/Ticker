@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Chakra_Petch, Inter_Tight, JetBrains_Mono } from "next/font/google";
 
+import { THEME_SCRIPT } from "@/lib/theme";
+
 import "./globals.css";
 
 const chakra = Chakra_Petch({
@@ -19,7 +21,15 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className={`${chakra.variable} ${interTight.variable} ${jetbrains.variable}`}>
+    <html
+      lang="en"
+      className={`${chakra.variable} ${interTight.variable} ${jetbrains.variable}`}
+      // the theme script below may set data-theme before React hydrates
+      suppressHydrationWarning
+    >
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+      </head>
       <body>{children}</body>
     </html>
   );

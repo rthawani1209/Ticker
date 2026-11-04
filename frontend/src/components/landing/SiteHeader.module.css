@@ -36,6 +36,10 @@
   flex: 1;
 }
 
+.signin {
+  color: var(--text);
+}
+
 .menu {
   display: none;
   align-items: center;
@@ -84,6 +88,10 @@
 
   .menu {
     display: inline-flex;
+  }
+
+  .signin {
+    display: none;
   }
 
   /* the folded menu drops down under the bar, full width */

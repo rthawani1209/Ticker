@@ -1,0 +1,134 @@
+.blotter {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.tabs {
+  display: flex;
+  align-items: flex-end;
+  gap: 22px;
+  padding: 0 var(--s-4);
+  border-bottom: 1px solid var(--line);
+}
+
+.tab {
+  padding: 12px 0 10px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.tab[aria-selected="true"] {
+  color: var(--text);
+  border-bottom-color: var(--you);
+}
+
+.tab span {
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+.pnl {
+  margin-left: auto;
+  padding-bottom: 12px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.pnl[data-direction="up"],
+.signed[data-direction="up"] {
+  color: var(--up);
+}
+
+.pnl[data-direction="down"],
+.signed[data-direction="down"] {
+  color: var(--down);
+}
+
+.body {
+  overflow: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.table th,
+.table td {
+  padding: 8px var(--s-4);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.table th:first-child,
+.table td:first-child {
+  text-align: left;
+}
+
+.table th {
+  font-weight: 400;
+  border-bottom: 1px solid var(--line);
+}
+
+.table td {
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
+}
+
+.sym {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.tag {
+  margin-left: 6px;
+  padding: 1px 5px;
+  border: 1px solid var(--line-strong);
+  font-size: 10px;
+  color: var(--text-2);
+  text-transform: uppercase;
+}
+
+.side {
+  text-transform: uppercase;
+}
+
+.side[data-side="buy"] {
+  color: var(--up);
+}
+
+.side[data-side="sell"] {
+  color: var(--down);
+}
+
+.cancel {
+  padding: 3px 8px;
+  border: 1px solid var(--line-strong);
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.cancel:hover {
+  border-color: var(--down);
+  color: var(--down);
+}
+
+.empty {
+  margin: 0;
+  padding: var(--s-6) var(--s-4);
+  color: var(--text-3);
+}

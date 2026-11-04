@@ -32,7 +32,7 @@ export default function Landing() {
                 </ButtonLink>
               </div>
               <span className={`mono ${styles.fine}`}>
-                Simulated market, no real money. Pick a stock on the board to see its book.
+                No sign-up for the practice account. Simulated market, no real money.
               </span>
             </div>
             <div id="market" className={styles.board}>
@@ -164,9 +164,14 @@ if nova["last"] > nova["refPrice"]:
             The exchange, the bots and the web app are open source. One clone and a few commands and
             your class has its own market.
           </p>
-          <ButtonLink href={REPO} size="lg">
-            Get the code
-          </ButtonLink>
+          <div className={styles.actions}>
+            <ButtonLink href="/trade?start=guest" size="lg">
+              Try it with $100k
+            </ButtonLink>
+            <ButtonLink href={REPO} variant="ghost" size="lg">
+              Get the code
+            </ButtonLink>
+          </div>
         </section>
       </main>
 

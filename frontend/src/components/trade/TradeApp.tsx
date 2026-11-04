@@ -1,0 +1,60 @@
+"use client";
+
+import Link from "next/link";
+import { useEffect, useRef, useState } from "react";
+
+import { useSession } from "@/components/session/SessionProvider";
+import { Button } from "@/components/ui/Button";
+import { Logo } from "@/components/ui/Logo";
+import { auth } from "@/lib/api";
+
+import styles from "./TradeApp.module.css";
+import { TradeScreen } from "./TradeScreen";
+
+// /trade: the trading screen if you have a session, otherwise a way in. Coming from the
+// landing page's "Try it with $100k" (?start=guest) makes a guest account straight away.
+export function TradeApp() {
+  const { status, session, start } = useSession();
+  const [error, setError] = useState<string | null>(null);
+  const tried = useRef(false);
+
+  const startGuest = () =>
+    start(auth.guest).catch((e: Error) => setError(e.message || "couldn't reach the market"));
+
+  useEffect(() => {
+    if (status !== "signed-out" || tried.current) return;
+    if (new URLSearchParams(window.location.search).get("start") !== "guest") return;
+    tried.current = true;
+    start(auth.guest).catch((e: Error) => setError(e.message || "couldn't reach the market"));
+  }, [status, start]);
+
+  if (status === "signed-in" && session) return <TradeScreen session={session} />;
+
+  return (
+    <main className={styles.gate}>
+      <Logo />
+      {status === "loading" ? (
+        <p className="label">Opening the market…</p>
+      ) : (
+        <div className={styles.box}>
+          <h1>Trade with $100,000 of pretend money.</h1>
+          <p>
+            A guest account needs no sign-up. You get the practice portfolio right away; make an
+            account later to join leagues.
+          </p>
+          <Button size="lg" onClick={startGuest}>
+            Start with $100k
+          </Button>
+          <p className="mono">
+            Have an account? <Link href="/login">Sign in</Link>
+          </p>
+          {error && (
+            <p className={`mono ${styles.error}`} role="alert">
+              {error}
+            </p>
+          )}
+        </div>
+      )}
+    </main>
+  );
+}

@@ -1,0 +1,21 @@
+.wrap {
+  position: relative;
+  height: 100%;
+  min-height: 280px;
+}
+
+.chart {
+  position: absolute;
+  inset: 0;
+}
+
+.empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-3);
+  pointer-events: none;
+}

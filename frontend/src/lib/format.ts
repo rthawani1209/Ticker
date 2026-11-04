@@ -30,3 +30,11 @@ export function formatChange(cents: number, refCents: number): { text: string; d
   const sign = pct > 0 ? "+" : pct < 0 ? "−" : "";
   return { text: `${arrow} ${sign}${Math.abs(pct).toFixed(2)}%`, dir };
 }
+
+// "142.35" -> 14235. Null for anything that isn't a positive amount with at most 2 decimals.
+export function parseDollars(text: string): number | null {
+  const t = text.trim().replace(/[$,]/g, "");
+  if (!/^\d+(\.\d{1,2})?$/.test(t)) return null;
+  const cents = Math.round(Number(t) * 100);
+  return cents > 0 ? cents : null;
+}

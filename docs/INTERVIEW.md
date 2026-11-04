@@ -67,6 +67,10 @@ Fills are append-only and every balance is derived from them. There's a pure fun
 A timer values every portfolio in one SQL query (cash plus quantity times the last price, summed per portfolio) and writes the returns into a Redis sorted set per league. Sorted sets keep members ordered by score, so the top 50 is one `ZREVRANGE`. Every minute the values are also saved, and the Sharpe ratio is computed from those snapshots: the average return per minute divided by its standard deviation, scaled up to a year. Higher means steadier gains, not just bigger bets.
 *Follow-up: why not just sort in Postgres?* You could at this size. Redis keeps the reads cheap when many browsers poll the board, and several gateway instances share one ranking.
 
+**How do bracket orders work if the exchange doesn't know about them?**
+The gateway runs them. The entry is a normal order that remembers its take-profit and stop-loss. When it's finished, the gateway sends the two exits as ordinary orders linked to the entry. When either exit fills, the gateway cancels the other. The tricky case is timing: the take-profit can fill before the stop-loss has even been acknowledged, so there's nothing to cancel yet. The fix is to run the same check again when the stop-loss is acknowledged: if its sibling already filled, it cancels itself.
+*Follow-up: why not put brackets in the engine?* It would be faster, but the engine stays a plain matching engine with nothing that only Ticker needs, and a bracket's timing is human speed anyway.
+
 ## Do this yourself (about an hour)
 
 1. Build and run the tests: `cmake -S engine -B engine/build && cmake --build engine/build -j && ctest --test-dir engine/build`.

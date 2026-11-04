@@ -71,5 +71,5 @@ The API in [`backend/`](backend) is how people and student bots reach the exchan
 
 ## Frontend
 
-The web app in [`frontend/`](frontend) is Next.js with TypeScript and CSS modules, built on "Signal", Ticker's own design tokens (dark instrument-panel look, fixed-width numbers, green and red only for price direction, amber for your own orders). So far it has the landing page with a live read-only market; the trading screen is next. See [frontend/README.md](frontend/README.md).
+The web app in [`frontend/`](frontend) is Next.js with TypeScript and CSS modules, built on "Signal", Ticker's own design tokens (dark instrument-panel look, fixed-width numbers, green and red only for price direction, amber for your own orders). It has the landing page with a live read-only market and the trade screen at `/trade`: a price chart (TradingView Lightweight Charts), a depth ladder you click to trade, an order ticket with bracket orders, B / S / Esc shortcuts, light and dark themes, and a no-sign-up guest account with $100k. See [frontend/README.md](frontend/README.md).
 

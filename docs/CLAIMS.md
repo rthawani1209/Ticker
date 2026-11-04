@@ -45,11 +45,14 @@ Status: **done** = built and proven; **partial** = built, proof or number still 
 |---|---|---|---|---|
 | Converts JSON orders into the engine's binary protocol | done | `backend/src/engine/`; `backend/test/protocol.test.ts`, `orders.test.ts` | `cd backend && npm test` | |
 | REST API (`/v1/...`) and WebSocket channels | done | `backend/src/routes/`, `backend/src/ws/hub.ts`; `ws.test.ts` | same | |
+| Orders and cancels over the WebSocket, with the same checks as REST | done | `trade()` in `backend/src/ws/hub.ts`; `trading.test.ts` (`places and cancels with the same rules as REST`) | `cd backend && npx vitest run test/trading.test.ts` | 20 orders/s per socket |
+| Bracket orders (take-profit + stop-loss, one cancels the other) | done | `bracketStep()` in `backend/src/orders.ts`; `trading.test.ts` (`bracket orders`) | same | |
+| Guest account with $100k, no sign-up | done | `POST /v1/auth/guest`; `trading.test.ts` (`guest accounts`) | same | |
 | Argon2id passwords, short-lived JWTs, rotating refresh tokens with reuse detection | done | `backend/src/auth/`; `auth.test.ts` | same | access tokens last 15 min |
 | Login and order rate limits in Redis | done | `auth.test.ts` (`rate limits login attempts`), `orders.test.ts` (`rate limits order entry per user`) | same | 10 logins/min per IP, 20 orders/s per user |
 | Zod validation on every input, parameterized SQL only | done | `backend/src/routes/*.ts`; `validates input` tests | same | |
 | Audit trail of logins, orders and cancels | done | `audit_log` table; `refresh_reuse` check in `auth.test.ts` | same | |
-| Integration tests against real Postgres and Redis | done | `backend/test/harness.ts`; `.github/workflows/backend.yml` | same | 53 tests |
+| Integration tests against real Postgres and Redis | done | `backend/test/harness.ts`; `.github/workflows/backend.yml` | same | 60 tests |
 | Redis pub/sub fan-out to WebSocket servers | planned (day 10) | | | |
 | [X] ms WebSocket delay | planned (day 10) | | | |
 | [X] ms p99 end-to-end under load (500 users + 50 bots) | planned (day 12) | | | |
@@ -70,6 +73,16 @@ Status: **done** = built and proven; **partial** = built, proof or number still 
 | Max drawdown, win rate, return chart | planned (day 10) | | | |
 | Assignments and grading | planned (day 11) | | | |
 
+## Web app (Next.js)
+
+| Claim | Status | Proof | Re-check it | Measured |
+|---|---|---|---|---|
+| Landing page with a live read-only market (falls back to a recorded replay) | done | `frontend/src/components/landing/`; `depth.test.ts`, `replay.test.ts` | `cd frontend && npm test` | |
+| Trade screen: TradingView Lightweight Charts, depth ladder with one-click trading, order ticket | done | `frontend/src/components/trade/`; `ladder.test.ts`, `ticket.test.ts` | same | |
+| Keyboard shortcuts (B buy, S sell, Esc cancel) | done | `TradeScreen.tsx` | `npm run dev`, open /trade | |
+| Light and dark themes | done | `frontend/src/styles/tokens.css`, `ThemeToggle.tsx` | same | |
+| Component tests, ESLint + Prettier in CI | done | `frontend/test/`; `.github/workflows/frontend.yml` | `npm test && npm run lint` | 19 tests |
+
 ## Still to come
 
-Trade screen and bracket orders (day 9); Redis fan-out, WebSocket delay, NumPy models, Portfolio and League screens (day 10); roles, professor tools, assignments, bot API keys, Python starter kit and fair-play detection (day 11); Docker Compose, load test, Playwright, libFuzzer, CodeQL and the replay test (day 12). Rows get added here as each one lands. Cut on 2026-11-03 and not claimed: Google sign-in, 2FA, the AI coach, admin console, badges, notifications, News and Bot console screens, practice reset, market sessions, ETF arbitrage scenario, device/IP clustering, data export/delete, engine drop-copy, Under-the-hood and overload pages, ZAP, and AWS.
+Redis fan-out, WebSocket delay, NumPy models, Portfolio and League screens (day 10); roles, professor tools, assignments, bot API keys, Python starter kit and fair-play detection (day 11); Docker Compose, load test, Playwright, libFuzzer, CodeQL and the replay test (day 12). Rows get added here as each one lands. Cut on 2026-11-03 and not claimed: Google sign-in, 2FA, the AI coach, admin console, badges, notifications, News and Bot console screens, practice reset, market sessions, ETF arbitrage scenario, device/IP clustering, data export/delete, engine drop-copy, Under-the-hood and overload pages, ZAP, and AWS.
