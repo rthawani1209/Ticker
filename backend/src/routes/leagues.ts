@@ -2,7 +2,7 @@
 // Also the positions view, since a portfolio only makes sense inside a league.
 import { randomBytes } from "node:crypto";
 
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 
 import { audit } from "../audit.js";
@@ -44,6 +44,12 @@ function inviteCode(): string {
 export default async function leagueRoutes(app: FastifyInstance) {
   const { db, leaderboard } = app.deps;
   app.addHook("preHandler", app.authenticate);
+  // Guests only have the practice league; making or joining a league needs an account.
+  const noGuests = async (req: FastifyRequest, reply: FastifyReply) => {
+    if (req.user.role === "guest") {
+      await reply.code(403).send({ error: "guest", message: "sign up to create or join a league" });
+    }
+  };
 
   const view = (r: any) => {
     const l = toLeague(r);
@@ -71,7 +77,7 @@ export default async function leagueRoutes(app: FastifyInstance) {
 
   app.post(
     "/",
-    { config: { rateLimit: { max: 10, timeWindow: 3_600_000 } } },
+    { preHandler: noGuests, config: { rateLimit: { max: 10, timeWindow: 3_600_000 } } },
     async (req, reply) => {
       const body = NewLeague.parse(req.body);
       const client = await db.connect();
@@ -128,7 +134,7 @@ export default async function leagueRoutes(app: FastifyInstance) {
 
   app.post(
     "/join",
-    { config: { rateLimit: { max: 20, timeWindow: 60_000 } } },
+    { preHandler: noGuests, config: { rateLimit: { max: 20, timeWindow: 60_000 } } },
     async (req, reply) => {
       const { code } = z
         .object({ code: z.string().trim().toUpperCase().length(8) })

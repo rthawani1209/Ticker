@@ -3,38 +3,7 @@ import { decodeJwt } from "jose";
 import { z } from "zod";
 
 import { audit } from "../audit.js";
-
-const Cents = z.number().int().positive().max(10_000_000);
-
-const NewOrder = z
-  .object({
-    symbol: z.string().toUpperCase(),
-    side: z.enum(["buy", "sell"]),
-    type: z.enum(["limit", "market", "stop", "stop_limit"]).default("limit"),
-    tif: z.enum(["gtc", "ioc", "fok"]).optional(),
-    qty: z.number().int().positive().max(100_000),
-    price: Cents.optional(),
-    stopPrice: Cents.optional(),
-    league: z.number().int().positive().optional(), // defaults to the practice league
-  })
-  .superRefine((o, ctx) => {
-    const needsPrice = o.type === "limit" || o.type === "stop_limit";
-    const needsStop = o.type === "stop" || o.type === "stop_limit";
-    if (needsPrice !== (o.price !== undefined)) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["price"],
-        message: needsPrice ? "required" : `not allowed for ${o.type} orders`,
-      });
-    }
-    if (needsStop !== (o.stopPrice !== undefined)) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["stopPrice"],
-        message: needsStop ? "required" : `not allowed for ${o.type} orders`,
-      });
-    }
-  });
+import { NewOrder, toOrderInput } from "../order-schema.js";
 
 const Id = z.object({ id: z.coerce.number().int().positive() });
 const ListQuery = z.object({
@@ -54,13 +23,8 @@ export default async function orderRoutes(app: FastifyInstance) {
 
   app.post("/", { config: orderLimit }, async (req, reply) => {
     const body = NewOrder.parse(req.body);
-    const sym = symbolsByTicker.get(body.symbol);
-    if (!sym)
-      return reply.code(422).send({ error: "unknown_symbol", message: `no symbol ${body.symbol}` });
-    // Market orders can only be immediate; everything else rests until cancelled by default.
-    const tif = body.tif ?? (body.type === "market" ? "ioc" : "gtc");
-    const { league, ...input } = body;
-    const order = await orders.place(req.user.userId, { ...input, symbolId: sym.id, tif }, league);
+    const { input, league } = toOrderInput(body, symbolsByTicker);
+    const order = await orders.place(req.user.userId, input, league);
     await audit(
       db,
       req.user.userId,
@@ -68,7 +32,7 @@ export default async function orderRoutes(app: FastifyInstance) {
       {
         orderId: order.id,
         league: order.league,
-        symbol: sym.ticker,
+        symbol: order.symbol,
         side: body.side,
         qty: body.qty,
       },

@@ -34,6 +34,8 @@ export interface OrderInput {
   qty: number;
   price?: number; // cents; limit and stop_limit
   stopPrice?: number; // cents; stop and stop_limit
+  takeProfit?: number; // bracket exits, cents
+  stopLoss?: number;
 }
 
 export interface Order {
@@ -50,6 +52,9 @@ export interface Order {
   filledQty: number;
   status: "pending" | "open" | "partially_filled" | "filled" | "cancelled" | "rejected";
   rejectReason: string | null;
+  takeProfit: number | null;
+  stopLoss: number | null;
+  parentId: number | null; // set on a bracket's exit orders
   createdAt: string;
   updatedAt: string;
 }
@@ -76,7 +81,7 @@ const TYPES: Record<TypeName, p.OrdType> = {
 const TIFS: Record<TifName, p.TIF> = { gtc: p.TIF.GTC, ioc: p.TIF.IOC, fok: p.TIF.FOK };
 
 const ORDER_COLUMNS = `o.id, pf.league_id, s.ticker AS symbol, o.side, o.type, o.tif, o.price, o.stop_price, o.qty, o.leaves,
-  o.filled_qty, o.status, o.reject_reason, o.created_at, o.updated_at`;
+  o.filled_qty, o.status, o.reject_reason, o.take_profit, o.stop_loss, o.parent_id, o.created_at, o.updated_at`;
 
 function toOrder(r: any): Order {
   return {
@@ -93,6 +98,9 @@ function toOrder(r: any): Order {
     filledQty: r.filled_qty,
     status: r.status,
     rejectReason: r.reject_reason,
+    takeProfit: r.take_profit,
+    stopLoss: r.stop_loss,
+    parentId: r.parent_id,
     createdAt: r.created_at.toISOString(),
     updatedAt: r.updated_at.toISOString(),
   };
@@ -159,25 +167,13 @@ export class OrderService extends EventEmitter {
         input,
         this.marks,
       );
-      const inserted = await client.query(
-        `INSERT INTO orders (user_id, portfolio_id, symbol_id, side, type, tif, price, stop_price, qty, leaves)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9) RETURNING id`,
-        [
-          userId,
-          row.portfolio_id,
-          input.symbolId,
-          input.side,
-          input.type,
-          input.tif,
-          input.price ?? null,
-          input.stopPrice ?? null,
-          input.qty,
-        ],
-      );
-      id = inserted.rows[0].id;
+      id = await insertOrder(client, userId, row.portfolio_id, input);
       account = row.portfolio_id;
     });
+    return this.send(userId, id, account, input);
+  }
 
+  private async send(userId: number, id: number, account: number, input: OrderInput) {
     const reply = await this.bridge.submit({
       account,
       clOrdId: id,
@@ -196,6 +192,76 @@ export class OrderService extends EventEmitter {
     // response shows the order as the engine left it (including any instant fills).
     if (reply) await this.settled();
     return (await this.get(userId, id))!;
+  }
+
+  // Runs after an order's fill or cancel has been written. Two bracket jobs:
+  // once an entry is done, send its exits for the filled quantity; once an exit
+  // fills, cancel the other one. Runs outside the event queue because send()
+  // waits on that queue.
+  private afterUpdate(orderId: number): void {
+    setImmediate(() => this.bracketStep(orderId).catch((err) => this.emit("error", err)));
+  }
+
+  private async bracketStep(orderId: number): Promise<void> {
+    const { rows } = await this.db.query(
+      `SELECT id, user_id, portfolio_id, symbol_id, side, status, filled_qty, take_profit, stop_loss, parent_id
+       FROM orders WHERE id = $1`,
+      [orderId],
+    );
+    const o = rows[0];
+    if (!o) return;
+
+    if (o.parent_id !== null) {
+      // An exit. If it has filled, cancel its sibling. If it was only just acked, its
+      // sibling may already have filled while this one was in flight, so cancel itself.
+      const others = await this.db.query(
+        `SELECT id, portfolio_id, engine_order_id, symbol_id, status, filled_qty FROM orders
+         WHERE parent_id = $1 AND id <> $2`,
+        [o.parent_id, o.id],
+      );
+      const live = (r: any) =>
+        ["open", "partially_filled"].includes(r.status) && r.engine_order_id !== null;
+      if (o.filled_qty > 0) {
+        for (const sib of others.rows.filter(live)) {
+          await this.bridge.cancel(sib.portfolio_id, sib.engine_order_id, sib.symbol_id);
+        }
+      } else if (others.rows.some((r) => r.filled_qty > 0)) {
+        const self = await this.db.query(
+          "SELECT engine_order_id, status FROM orders WHERE id = $1",
+          [o.id],
+        );
+        if (live(self.rows[0])) {
+          await this.bridge.cancel(o.portfolio_id, self.rows[0].engine_order_id, o.symbol_id);
+        }
+      }
+      return;
+    }
+
+    if (o.filled_qty === 0) return;
+    if (o.take_profit === null || !["filled", "cancelled"].includes(o.status)) return;
+    // exits_sent flips once, so a replayed event can't send the exits twice.
+    const claimed = await this.db.query(
+      "UPDATE orders SET exits_sent = true WHERE id = $1 AND NOT exits_sent RETURNING id",
+      [o.id],
+    );
+    if (!claimed.rows[0] || !this.bridge.connected) return;
+    const side: SideName = o.side === "buy" ? "sell" : "buy";
+    const base = { symbolId: o.symbol_id, side, tif: "gtc" as const, qty: o.filled_qty };
+    const exits: OrderInput[] = [
+      { ...base, type: "limit", price: Number(o.take_profit) },
+      { ...base, type: "stop", stopPrice: Number(o.stop_loss) },
+    ];
+    // The exits skip the buying-power check: they only close what the entry opened,
+    // and only one of them can fill before the other is cancelled.
+    const ids: number[] = [];
+    await this.tx(async (client) => {
+      for (const exit of exits) {
+        ids.push(await insertOrder(client, o.user_id, o.portfolio_id, exit, o.id));
+      }
+    });
+    for (const [i, exit] of exits.entries()) {
+      await this.send(o.user_id, ids[i]!, o.portfolio_id, exit);
+    }
   }
 
   async cancel(userId: number, orderId: number): Promise<Order> {
@@ -326,6 +392,7 @@ export class OrderService extends EventEmitter {
           [e.clOrdId, e.orderId, e.account],
         );
         ({ id, user_id: userId } = r.rows[0] ?? {});
+        if (id !== undefined) this.afterUpdate(id);
         break;
       }
       case p.EventType.Reject: {
@@ -375,6 +442,7 @@ export class OrderService extends EventEmitter {
           fill = { orderId: o.id, league: league.rows[0].id, commission: fee };
         });
         if (fill) {
+          this.afterUpdate(fill.orderId);
           this.emit(`fill:${userId}`, {
             ...fill,
             symbol: e.symbol,
@@ -399,6 +467,7 @@ export class OrderService extends EventEmitter {
           id = o.id;
           userId = o.user_id;
         });
+        if (id !== undefined) this.afterUpdate(id);
         break;
       }
       case p.EventType.Replaced: {
@@ -429,4 +498,33 @@ export class OrderService extends EventEmitter {
       client.release();
     }
   }
+}
+
+async function insertOrder(
+  client: PoolClient,
+  userId: number,
+  portfolioId: number,
+  input: OrderInput,
+  parentId: number | null = null,
+): Promise<number> {
+  const { rows } = await client.query(
+    `INSERT INTO orders (user_id, portfolio_id, symbol_id, side, type, tif, price, stop_price, qty, leaves,
+       take_profit, stop_loss, parent_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9, $10, $11, $12) RETURNING id`,
+    [
+      userId,
+      portfolioId,
+      input.symbolId,
+      input.side,
+      input.type,
+      input.tif,
+      input.price ?? null,
+      input.stopPrice ?? null,
+      input.qty,
+      input.takeProfit ?? null,
+      input.stopLoss ?? null,
+      parentId,
+    ],
+  );
+  return rows[0].id;
 }

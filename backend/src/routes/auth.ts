@@ -1,3 +1,5 @@
+import { randomBytes } from "node:crypto";
+
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 
@@ -64,6 +66,29 @@ export default async function authRoutes(app: FastifyInstance) {
     reply.code(201);
     return session(reply, user, await tokens.issueRefresh(user.id, meta(req)));
   });
+
+  // "Try it with $100k": a guest gets a practice portfolio and a session cookie, no
+  // email or password. Guests can trade in the practice league but can't join leagues.
+  app.post(
+    "/guest",
+    { config: { rateLimit: { max: 5, timeWindow: 3_600_000 } } },
+    async (req, reply) => {
+      const { rows } = await db.query(
+        `WITH u AS (
+           INSERT INTO users (username, role) VALUES ($1, 'guest') RETURNING id, username, role
+         ), p AS (
+           INSERT INTO portfolios (league_id, user_id, cash)
+           SELECT l.id, u.id, l.starting_cash FROM leagues l, u WHERE l.is_practice
+         )
+         SELECT * FROM u`,
+        [`guest_${randomBytes(5).toString("hex")}`],
+      );
+      const user = rows[0];
+      await audit(db, user.id, "guest", {}, req.ip);
+      reply.code(201);
+      return session(reply, user, await tokens.issueRefresh(user.id, meta(req)));
+    },
+  );
 
   app.post("/login", { config: authLimit }, async (req, reply) => {
     const body = Login.parse(req.body);

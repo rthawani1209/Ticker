@@ -13,30 +13,33 @@ The API gateway between the web app (and student bots) and the exchange. Node 20
 
 All prices are in cents. Authenticated routes take `Authorization: Bearer <accessToken>`.
 
-| Method     | Path                          |                                                                                                                                     |
-| ---------- | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| POST       | `/v1/auth/register`           | `{email, username, password}` → `{accessToken, user}` and the refresh cookie                                                        |
-| POST       | `/v1/auth/login`              | `{email, password}`                                                                                                                 |
-| POST       | `/v1/auth/refresh`            | swaps the refresh cookie for a new one and a new access token                                                                       |
-| POST       | `/v1/auth/logout`             |                                                                                                                                     |
-| GET        | `/v1/me`                      |                                                                                                                                     |
-| POST       | `/v1/orders`                  | `{symbol, side, type?, tif?, qty, price?, stopPrice?, league?}` (league defaults to practice)                                       |
-| GET        | `/v1/orders`                  | `?open=true&league=<id>&limit=50&before=<id>`                                                                                       |
-| GET/DELETE | `/v1/orders/:id`              | DELETE cancels                                                                                                                      |
-| GET        | `/v1/fills`                   | `?league=<id>&limit=100`                                                                                                            |
-| GET        | `/v1/positions`               | `?league=<id>`: cash, equity, positions with average price and P&L                                                                  |
-| POST       | `/v1/leagues`                 | `{name, startingCash?, startsAt?, endsAt?, commissionCents?, commissionBps?, maxPosition?, allowShort?, marginBps?, allowedTypes?}` |
-| GET        | `/v1/leagues`                 | leagues you're in                                                                                                                   |
-| GET        | `/v1/leagues/:id`             | the owner also sees the invite code                                                                                                 |
-| POST       | `/v1/leagues/join`            | `{code}`                                                                                                                            |
-| GET        | `/v1/leagues/:id/leaderboard` | `?by=return\|sharpe&limit=50`                                                                                                       |
-| GET        | `/v1/symbols`                 | every stock with last price, bid/ask and volume                                                                                     |
-| GET        | `/v1/market/:ticker`          | `?depth=10`                                                                                                                         |
-| GET        | `/v1/market/:ticker/trades`   | last 100 trades                                                                                                                     |
-| GET        | `/v1/engine/stats`            | engine throughput and latency                                                                                                       |
-| GET        | `/health`                     |                                                                                                                                     |
+| Method     | Path                          |                                                                                                                                                             |
+| ---------- | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| POST       | `/v1/auth/register`           | `{email, username, password}` → `{accessToken, user}` and the refresh cookie                                                                                |
+| POST       | `/v1/auth/login`              | `{email, password}`                                                                                                                                         |
+| POST       | `/v1/auth/refresh`            | swaps the refresh cookie for a new one and a new access token                                                                                               |
+| POST       | `/v1/auth/logout`             |                                                                                                                                                             |
+| POST       | `/v1/auth/guest`              | "Try it with $100k": a guest with a practice portfolio and a session, no sign-up (guests can't make or join leagues)                                        |
+| GET        | `/v1/me`                      |                                                                                                                                                             |
+| POST       | `/v1/orders`                  | `{symbol, side, type?, tif?, qty, price?, stopPrice?, takeProfit?, stopLoss?, league?}` (league defaults to practice; takeProfit + stopLoss make a bracket) |
+| GET        | `/v1/orders`                  | `?open=true&league=<id>&limit=50&before=<id>`                                                                                                               |
+| GET/DELETE | `/v1/orders/:id`              | DELETE cancels                                                                                                                                              |
+| GET        | `/v1/fills`                   | `?league=<id>&limit=100`                                                                                                                                    |
+| GET        | `/v1/positions`               | `?league=<id>`: cash, equity, positions with average price and P&L                                                                                          |
+| POST       | `/v1/leagues`                 | `{name, startingCash?, startsAt?, endsAt?, commissionCents?, commissionBps?, maxPosition?, allowShort?, marginBps?, allowedTypes?}`                         |
+| GET        | `/v1/leagues`                 | leagues you're in                                                                                                                                           |
+| GET        | `/v1/leagues/:id`             | the owner also sees the invite code                                                                                                                         |
+| POST       | `/v1/leagues/join`            | `{code}`                                                                                                                                                    |
+| GET        | `/v1/leagues/:id/leaderboard` | `?by=return\|sharpe&limit=50`                                                                                                                               |
+| GET        | `/v1/symbols`                 | every stock with last price, bid/ask and volume                                                                                                             |
+| GET        | `/v1/market/:ticker`          | `?depth=10`                                                                                                                                                 |
+| GET        | `/v1/market/:ticker/trades`   | last 100 trades                                                                                                                                             |
+| GET        | `/v1/engine/stats`            | engine throughput and latency                                                                                                                               |
+| GET        | `/health`                     |                                                                                                                                                             |
 
-WebSocket at `/ws` (pass `?token=` or send `{"op":"auth","token":...}`), then `{"op":"subscribe","channel":...}` for `book:NOVA`, `trades:NOVA`, `status` or `me:orders`.
+WebSocket at `/ws` (pass `?token=` or send `{"op":"auth","token":...}`), then `{"op":"subscribe","channel":...}` for `book:NOVA`, `trades:NOVA`, `status` or `me:orders`. Signed-in sockets can also trade: `{"op":"order","ref":"a1","order":{...same body as POST /v1/orders}}` and `{"op":"cancel","ref":"a2","id":123}`, answered on the `order`, `cancel` or `error` channel with the same `ref`. Same checks and the same 20 orders/second limit as REST.
+
+Bracket orders: when the entry order is done (filled, or cancelled after a partial fill), the gateway sends two exits for the filled quantity, a take-profit limit and a stop-loss stop. The first exit to fill cancels the other. The exits skip the buying-power check (they only close what the entry opened), and the check counts a bracket's two exits once.
 
 ## Known limits
 

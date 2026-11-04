@@ -9,7 +9,7 @@ export const ACCESS_TTL_S = 15 * 60;
 export const REFRESH_TTL_S = 30 * 24 * 3600;
 export const REUSE_GRACE_S = 10;
 
-export type Role = "student" | "professor" | "admin";
+export type Role = "guest" | "student" | "professor" | "admin";
 export interface AccessClaims {
   userId: number;
   role: Role;

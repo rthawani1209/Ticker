@@ -4,30 +4,44 @@
 //   trades:TICKER  each trade
 //   status         halts and resumes
 //   me:orders      your order updates and fills (needs a token)
+//
+// Signed-in clients can also trade over the socket, with the same rules as REST:
+//   {"op":"order","ref":"a1","order":{...same body as POST /v1/orders}}  -> {"channel":"order","data":{"ref","order"}}
+//   {"op":"cancel","ref":"a2","id":123}                                  -> {"channel":"cancel","data":{"ref","order"}}
+// Failures come back on the "error" channel with the same ref.
 import type { FastifyInstance } from "fastify";
 import type { WebSocket } from "ws";
 import { z } from "zod";
 
+import { audit } from "../audit.js";
 import * as p from "../engine/protocol.js";
+import { ApiError } from "../errors.js";
+import { NewOrder, toOrderInput } from "../order-schema.js";
 import type { Order } from "../orders.js";
 
 const MAX_SUBSCRIPTIONS = 50;
 const MAX_BUFFERED = 1 << 20; // drop clients that stop reading
 
 const ClientMsg = z.object({
-  op: z.enum(["subscribe", "unsubscribe", "auth", "ping"]),
+  op: z.enum(["subscribe", "unsubscribe", "auth", "ping", "order", "cancel"]),
   channel: z.string().max(40).optional(),
   token: z.string().max(2000).optional(),
+  ref: z.string().max(40).optional(),
+  order: z.unknown().optional(),
+  id: z.number().int().positive().optional(),
 });
+
+const ORDERS_PER_SECOND = 20; // same as the REST order limit
 
 interface Client {
   ws: WebSocket;
   userId: number | null;
   channels: Set<string>;
+  sent: number[]; // times of recent order/cancel messages, for the rate limit
 }
 
 export default async function wsRoutes(app: FastifyInstance) {
-  const { bridge, orders, symbols, symbolsByTicker, tokens } = app.deps;
+  const { bridge, db, orders, symbols, symbolsByTicker, tokens } = app.deps;
   const subscribers = new Map<string, Set<Client>>();
 
   const send = (c: Client, channel: string, data: unknown) => {
@@ -95,7 +109,7 @@ export default async function wsRoutes(app: FastifyInstance) {
   }
 
   app.get("/ws", { websocket: true }, (ws, req) => {
-    const c: Client = { ws, userId: null, channels: new Set() };
+    const c: Client = { ws, userId: null, channels: new Set(), sent: [] };
     let detach = () => {};
 
     const authenticate = async (token: string) => {
@@ -130,6 +144,7 @@ export default async function wsRoutes(app: FastifyInstance) {
         const ok = c.userId === null && (await authenticate(msg.token ?? ""));
         return send(c, ok ? "auth" : "error", ok ? { userId: c.userId } : { message: "bad token" });
       }
+      if (msg.op === "order" || msg.op === "cancel") return trade(msg, req.ip);
       const channel = msg.channel ?? "";
       if (msg.op === "subscribe") {
         const err = subscribe(c, channel);
@@ -139,6 +154,48 @@ export default async function wsRoutes(app: FastifyInstance) {
       subscribers.get(channel)?.delete(c);
       send(c, "unsubscribed", { channel });
     });
+
+    async function trade(msg: z.infer<typeof ClientMsg>, ip: string) {
+      const ref = msg.ref;
+      const fail = (code: string, message: string) =>
+        send(c, "error", { ref, error: code, message });
+      if (c.userId === null) return fail("unauthorized", "auth first");
+      const now = Date.now();
+      c.sent = c.sent.filter((t) => now - t < 1000);
+      if (c.sent.length >= ORDERS_PER_SECOND) return fail("rate_limited", "slow down");
+      c.sent.push(now);
+      try {
+        if (msg.op === "order") {
+          const parsed = NewOrder.safeParse(msg.order);
+          if (!parsed.success) return fail("bad_request", z.prettifyError(parsed.error));
+          const { input, league } = toOrderInput(parsed.data, symbolsByTicker);
+          const order = await orders.place(c.userId, input, league);
+          await audit(
+            db,
+            c.userId,
+            "order_new",
+            {
+              orderId: order.id,
+              league: order.league,
+              symbol: order.symbol,
+              side: order.side,
+              qty: order.qty,
+              via: "ws",
+            },
+            ip,
+          );
+          return send(c, "order", { ref, order });
+        }
+        if (msg.id === undefined) return fail("bad_request", "id is required");
+        const order = await orders.cancel(c.userId, msg.id);
+        await audit(db, c.userId, "order_cancel", { orderId: msg.id, via: "ws" }, ip);
+        return send(c, "cancel", { ref, order });
+      } catch (err) {
+        if (err instanceof ApiError) return fail(err.code, err.message);
+        app.log.error(err);
+        return fail("internal", "something went wrong");
+      }
+    }
 
     ws.on("close", () => {
       detach();

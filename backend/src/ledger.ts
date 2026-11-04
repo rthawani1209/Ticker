@@ -183,13 +183,24 @@ export async function checkOrder(
       `${o.type} orders aren't allowed in this league`,
     );
   }
+  // A bracket's exits are a limit and a stop, so the league has to allow both.
+  if (
+    o.takeProfit !== undefined &&
+    !["limit", "stop"].every((t) => league.allowedTypes.includes(t))
+  ) {
+    throw new ApiError(
+      422,
+      "order_type_not_allowed",
+      "brackets need limit and stop orders, which this league doesn't allow",
+    );
+  }
 
   const [positions, open] = await Promise.all([
     client.query("SELECT symbol_id, qty FROM positions WHERE portfolio_id = $1 AND qty <> 0", [
       portfolio.id,
     ]),
     client.query(
-      `SELECT symbol_id, side, type, price, stop_price, leaves FROM orders
+      `SELECT symbol_id, side, type, price, stop_price, leaves, parent_id FROM orders
        WHERE portfolio_id = $1 AND status IN ('pending', 'open', 'partially_filled')`,
       [portfolio.id],
     ),
@@ -201,7 +212,13 @@ export async function checkOrder(
   let reserved = 0;
   const openBuys = new Map<number, number>();
   const openSells = new Map<number, number>();
+  const exitsSeen = new Set<number>();
   for (const r of open.rows) {
+    // A bracket's two exits close the same shares and only one can fill, so count one.
+    if (r.parent_id !== null) {
+      if (exitsSeen.has(r.parent_id)) continue;
+      exitsSeen.add(r.parent_id);
+    }
     const px = estimatePrice(
       {
         type: r.type,
