@@ -1,6 +1,8 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 
+import { CANDLE_SECONDS } from "../engine/market.js";
+
 export default async function marketRoutes(app: FastifyInstance) {
   const { bridge, symbols, symbolsByTicker } = app.deps;
 
@@ -40,6 +42,13 @@ export default async function marketRoutes(app: FastifyInstance) {
     const sym = symbolsByTicker.get(Ticker.parse(req.params).ticker);
     if (!sym) return reply.code(404).send({ error: "not_found", message: "no such symbol" });
     return bridge.books[sym.id]!.trades.slice(-100).reverse();
+  });
+
+  // Price bars for the chart, built from trades since the gateway started.
+  app.get("/market/:ticker/candles", async (req, reply) => {
+    const sym = symbolsByTicker.get(Ticker.parse(req.params).ticker);
+    if (!sym) return reply.code(404).send({ error: "not_found", message: "no such symbol" });
+    return { seconds: CANDLE_SECONDS, candles: bridge.books[sym.id]!.candles };
   });
 
   // Live engine numbers for the "under the hood" page.

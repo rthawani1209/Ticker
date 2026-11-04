@@ -53,6 +53,11 @@ describe("orders", () => {
 
     const trades = (await b.app.inject({ url: "/v1/market/HELX/trades" })).json();
     expect(trades[0]).toMatchObject({ price: 5_810, qty: 12 });
+
+    const { seconds, candles } = (await b.app.inject({ url: "/v1/market/HELX/candles" })).json();
+    expect(seconds).toBe(15);
+    expect(candles.at(-1)).toMatchObject({ close: 5_810, low: 5_810 });
+    expect(candles.at(-1).volume).toBeGreaterThanOrEqual(12);
   });
 
   it("cancels an open order", async () => {

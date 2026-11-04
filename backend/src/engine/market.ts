@@ -9,10 +9,24 @@ export interface Trade {
   time: number;
 }
 
+// One bar of the price chart. time is the bar's start, in seconds.
+export interface Candle {
+  time: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
+export const CANDLE_SECONDS = 15;
+const MAX_CANDLES = 480; // two hours
+
 export class SymbolBook {
   bids = new Map<number, number>();
   asks = new Map<number, number>();
   trades: Trade[] = []; // newest last
+  candles: Candle[] = []; // oldest first
   halted = false;
   haltedUntil = 0;
   volume = 0;
@@ -39,6 +53,7 @@ export class SymbolBook {
           time: now,
         });
         if (this.trades.length > 200) this.trades.splice(0, this.trades.length - 200);
+        this.addToCandle(e.price, e.qty, now);
         break;
       case EventType.SnapshotEnd:
         if (e.price) this.last = e.price;
@@ -48,6 +63,20 @@ export class SymbolBook {
         this.haltedUntil = this.halted ? e.levelQty : 0;
         break;
     }
+  }
+
+  private addToCandle(price: number, qty: number, now: number): void {
+    const time = Math.floor(now / 1000 / CANDLE_SECONDS) * CANDLE_SECONDS;
+    const bar = this.candles.at(-1);
+    if (bar && bar.time === time) {
+      bar.high = Math.max(bar.high, price);
+      bar.low = Math.min(bar.low, price);
+      bar.close = price;
+      bar.volume += qty;
+      return;
+    }
+    this.candles.push({ time, open: price, high: price, low: price, close: price, volume: qty });
+    if (this.candles.length > MAX_CANDLES) this.candles.shift();
   }
 
   bestAsk(): number | undefined {

@@ -34,6 +34,7 @@ All prices are in cents. Authenticated routes take `Authorization: Bearer <acces
 | GET        | `/v1/symbols`                 | every stock with last price, bid/ask and volume                                                                                                             |
 | GET        | `/v1/market/:ticker`          | `?depth=10`                                                                                                                                                 |
 | GET        | `/v1/market/:ticker/trades`   | last 100 trades                                                                                                                                             |
+| GET        | `/v1/market/:ticker/candles`  | 15-second price bars (last two hours) for the chart                                                                                                         |
 | GET        | `/v1/engine/stats`            | engine throughput and latency                                                                                                                               |
 | GET        | `/health`                     |                                                                                                                                                             |
 
