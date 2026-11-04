@@ -190,6 +190,26 @@ export function cancel(account: number, clOrdId: number, orderId: number, symbol
   return b;
 }
 
+// Changes a resting order's quantity and/or price. Shrinking at the same price keeps
+// its place in the queue. Waiting stops can't be amended.
+export function replace(
+  account: number,
+  clOrdId: number,
+  orderId: number,
+  symbol: number,
+  qty: number,
+  price: number,
+): Buffer {
+  const b = header(MsgType.Replace);
+  b.writeUInt32LE(account, 4);
+  b.writeBigUInt64LE(BigInt(clOrdId), 8);
+  b.writeBigUInt64LE(BigInt(orderId), 16);
+  b.writeUInt32LE(symbol, 24);
+  b.writeUInt32LE(qty, 28);
+  b.writeBigInt64LE(BigInt(price), 32);
+  return b;
+}
+
 export function symbolMsg(type: number, symbol: number): Buffer {
   const b = header(type);
   b.writeUInt32LE(symbol, 4);

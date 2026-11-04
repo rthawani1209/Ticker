@@ -46,13 +46,13 @@ Status: **done** = built and proven; **partial** = built, proof or number still 
 | Converts JSON orders into the engine's binary protocol | done | `backend/src/engine/`; `backend/test/protocol.test.ts`, `orders.test.ts` | `cd backend && npm test` | |
 | REST API (`/v1/...`) and WebSocket channels | done | `backend/src/routes/`, `backend/src/ws/hub.ts`; `ws.test.ts` | same | |
 | Orders and cancels over the WebSocket, with the same checks as REST | done | `trade()` in `backend/src/ws/hub.ts`; `trading.test.ts` (`places and cancels with the same rules as REST`) | `cd backend && npx vitest run test/trading.test.ts` | 20 orders/s per socket |
-| Bracket orders (take-profit + stop-loss, one cancels the other) | done | `bracketStep()` in `backend/src/orders.ts`; `trading.test.ts` (`bracket orders`) | same | |
+| Bracket orders (take-profit + stop-loss, one cancels the other) | done | `syncExits()` in `backend/src/orders.ts`; `trading.test.ts` (`bracket orders`: partial exit fills, reconnect, no shorting through exits) | same | |
 | Guest account with $100k, no sign-up | done | `POST /v1/auth/guest`; `trading.test.ts` (`guest accounts`) | same | |
 | Argon2id passwords, short-lived JWTs, rotating refresh tokens with reuse detection | done | `backend/src/auth/`; `auth.test.ts` | same | access tokens last 15 min |
 | Login and order rate limits in Redis | done | `auth.test.ts` (`rate limits login attempts`), `orders.test.ts` (`rate limits order entry per user`) | same | 10 logins/min per IP, 20 orders/s per user |
 | Zod validation on every input, parameterized SQL only | done | `backend/src/routes/*.ts`; `validates input` tests | same | |
 | Audit trail of logins, orders and cancels | done | `audit_log` table; `refresh_reuse` check in `auth.test.ts` | same | |
-| Integration tests against real Postgres and Redis | done | `backend/test/harness.ts`; `.github/workflows/backend.yml` | same | 60 tests |
+| Integration tests against real Postgres and Redis | done | `backend/test/harness.ts`; `.github/workflows/backend.yml` | same | 63 tests |
 | Redis pub/sub fan-out to WebSocket servers | planned (day 10) | | | |
 | [X] ms WebSocket delay | planned (day 10) | | | |
 | [X] ms p99 end-to-end under load (500 users + 50 bots) | planned (day 12) | | | |

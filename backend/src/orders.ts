@@ -8,7 +8,7 @@ import { EventEmitter } from "node:events";
 import type { PoolClient } from "pg";
 
 import type { Db } from "./db/pool.js";
-import type { EngineBridge } from "./engine/bridge.js";
+import { EngineDown, type EngineBridge } from "./engine/bridge.js";
 import * as p from "./engine/protocol.js";
 import { ApiError } from "./errors.js";
 import {
@@ -194,73 +194,151 @@ export class OrderService extends EventEmitter {
     return (await this.get(userId, id))!;
   }
 
-  // Runs after an order's fill or cancel has been written. Two bracket jobs:
-  // once an entry is done, send its exits for the filled quantity; once an exit
-  // fills, cancel the other one. Runs outside the event queue because send()
-  // waits on that queue.
+  // Bracket bookkeeping runs after an order's fill, ack or cancel has been written. It
+  // runs outside the event queue (send() waits on that queue), one bracket at a time.
   private afterUpdate(orderId: number): void {
-    setImmediate(() => this.bracketStep(orderId).catch((err) => this.emit("error", err)));
+    setImmediate(() => this.bracketsFor(orderId).catch((err) => this.emit("error", err)));
   }
 
-  private async bracketStep(orderId: number): Promise<void> {
+  private bracketLocks = new Map<number, Promise<void>>();
+
+  private serial(entryId: number, fn: () => Promise<void>): Promise<void> {
+    const next = (this.bracketLocks.get(entryId) ?? Promise.resolve()).then(fn);
+    const tail = next.catch(() => {});
+    this.bracketLocks.set(entryId, tail);
+    tail.then(() => {
+      if (this.bracketLocks.get(entryId) === tail) this.bracketLocks.delete(entryId);
+    });
+    return next;
+  }
+
+  // The brackets an update can affect: its own (as entry or exit), or for any other
+  // order, every bracket on that stock in that portfolio, because the position moved.
+  private async bracketsFor(orderId: number): Promise<void> {
     const { rows } = await this.db.query(
-      `SELECT id, user_id, portfolio_id, symbol_id, side, status, filled_qty, take_profit, stop_loss, parent_id
-       FROM orders WHERE id = $1`,
+      "SELECT id, parent_id, take_profit, portfolio_id, symbol_id FROM orders WHERE id = $1",
       [orderId],
     );
     const o = rows[0];
     if (!o) return;
-
-    if (o.parent_id !== null) {
-      // An exit. If it has filled, cancel its sibling. If it was only just acked, its
-      // sibling may already have filled while this one was in flight, so cancel itself.
-      const others = await this.db.query(
-        `SELECT id, portfolio_id, engine_order_id, symbol_id, status, filled_qty FROM orders
-         WHERE parent_id = $1 AND id <> $2`,
-        [o.parent_id, o.id],
+    let entries: number[];
+    if (o.parent_id !== null) entries = [o.parent_id];
+    else if (o.take_profit !== null) entries = [o.id];
+    else {
+      const r = await this.db.query(
+        `SELECT DISTINCT parent_id FROM orders WHERE portfolio_id = $1 AND symbol_id = $2
+           AND parent_id IS NOT NULL AND status IN ('pending', 'open', 'partially_filled')`,
+        [o.portfolio_id, o.symbol_id],
       );
-      const live = (r: any) =>
-        ["open", "partially_filled"].includes(r.status) && r.engine_order_id !== null;
-      if (o.filled_qty > 0) {
-        for (const sib of others.rows.filter(live)) {
-          await this.bridge.cancel(sib.portfolio_id, sib.engine_order_id, sib.symbol_id);
-        }
-      } else if (others.rows.some((r) => r.filled_qty > 0)) {
-        const self = await this.db.query(
-          "SELECT engine_order_id, status FROM orders WHERE id = $1",
-          [o.id],
-        );
-        if (live(self.rows[0])) {
-          await this.bridge.cancel(o.portfolio_id, self.rows[0].engine_order_id, o.symbol_id);
+      entries = r.rows.map((x) => x.parent_id);
+    }
+    for (const id of entries) await this.serial(id, () => this.syncExits(id));
+  }
+
+  // Brings a bracket's exits in line with what they protect: the entry's filled quantity,
+  // minus what the exits have already closed, capped at the position actually held (if
+  // the shares went some other way, an exit must not turn into a short). The take-profit
+  // and the stop-loss should each be working for exactly that much. So a partial fill of
+  // one shrinks the other, a full fill cancels it, and the first sync after the entry is
+  // done sends both. Exits skip the buying-power check, which this keeps safe.
+  private async syncExits(entryId: number): Promise<void> {
+    // Nothing can be sent or cancelled now; reconcile() runs this again on reconnect.
+    if (!this.bridge.connected) return;
+    const { rows } = await this.db.query(
+      `SELECT id, user_id, portfolio_id, symbol_id, side, status, filled_qty, take_profit, stop_loss
+       FROM orders WHERE id = $1`,
+      [entryId],
+    );
+    const e = rows[0];
+    if (!e || e.take_profit === null || e.filled_qty === 0) return;
+    if (!["filled", "cancelled"].includes(e.status)) return;
+
+    const [exitRows, pos] = await Promise.all([
+      this.db.query(
+        `SELECT id, type, status, leaves, filled_qty, price, engine_order_id, reject_reason
+         FROM orders WHERE parent_id = $1 ORDER BY id`,
+        [entryId],
+      ),
+      this.db.query("SELECT qty FROM positions WHERE portfolio_id = $1 AND symbol_id = $2", [
+        e.portfolio_id,
+        e.symbol_id,
+      ]),
+    ]);
+    const exits = exitRows.rows;
+    const held = (pos.rows[0]?.qty ?? 0) * (e.side === "buy" ? 1 : -1);
+    const closed = exits.reduce((sum, x) => sum + x.filled_qty, 0);
+    const protect = Math.max(0, Math.min(e.filled_qty - closed, held));
+
+    const base = {
+      symbolId: e.symbol_id,
+      side: (e.side === "buy" ? "sell" : "buy") as SideName,
+      tif: "gtc" as const,
+    };
+    const exit = (type: "limit" | "stop", qty: number): OrderInput =>
+      type === "limit"
+        ? { ...base, qty, type, price: Number(e.take_profit) }
+        : { ...base, qty, type, stopPrice: Number(e.stop_loss) };
+
+    const toSend: OrderInput[] = [];
+    for (const type of ["limit", "stop"] as const) {
+      const legs = exits.filter((x) => x.type === type);
+      // 'resized' marks a stop we're cancelling to replace with a smaller one.
+      const working = legs.filter(
+        (x) =>
+          ["pending", "open", "partially_filled"].includes(x.status) &&
+          x.reject_reason !== "resized",
+      );
+      if (working.length === 0) {
+        // Send it if it was never sent, or if the exchange was down when it was.
+        const latest = legs.at(-1);
+        const unsent =
+          !latest ||
+          (latest.status === "rejected" && latest.reject_reason === "exchange_unavailable");
+        if (protect > 0 && unsent) toSend.push(exit(type, protect));
+        continue;
+      }
+      for (const x of working) {
+        // A pending exit gets checked again when its ack arrives.
+        if (x.leaves <= protect || x.engine_order_id === null) continue;
+        if (protect === 0) {
+          this.bridge.cancel(e.portfolio_id, x.engine_order_id, e.symbol_id).catch(() => {});
+        } else if (type === "limit") {
+          this.bridge.replace(
+            e.portfolio_id,
+            x.id,
+            x.engine_order_id,
+            e.symbol_id,
+            protect,
+            x.price,
+          );
+        } else {
+          // The engine can't amend a waiting stop, so cancel it and send a smaller one.
+          await this.db.query("UPDATE orders SET reject_reason = 'resized' WHERE id = $1", [x.id]);
+          this.bridge.cancel(e.portfolio_id, x.engine_order_id, e.symbol_id).catch(() => {});
+          toSend.push(exit("stop", protect));
         }
       }
-      return;
     }
+    if (toSend.length === 0) return;
 
-    if (o.filled_qty === 0) return;
-    if (o.take_profit === null || !["filled", "cancelled"].includes(o.status)) return;
-    // exits_sent flips once, so a replayed event can't send the exits twice.
-    const claimed = await this.db.query(
-      "UPDATE orders SET exits_sent = true WHERE id = $1 AND NOT exits_sent RETURNING id",
-      [o.id],
-    );
-    if (!claimed.rows[0] || !this.bridge.connected) return;
-    const side: SideName = o.side === "buy" ? "sell" : "buy";
-    const base = { symbolId: o.symbol_id, side, tif: "gtc" as const, qty: o.filled_qty };
-    const exits: OrderInput[] = [
-      { ...base, type: "limit", price: Number(o.take_profit) },
-      { ...base, type: "stop", stopPrice: Number(o.stop_loss) },
-    ];
-    // The exits skip the buying-power check: they only close what the entry opened,
-    // and only one of them can fill before the other is cancelled.
     const ids: number[] = [];
     await this.tx(async (client) => {
-      for (const exit of exits) {
-        ids.push(await insertOrder(client, o.user_id, o.portfolio_id, exit, o.id));
-      }
+      for (const x of toSend)
+        ids.push(await insertOrder(client, e.user_id, e.portfolio_id, x, e.id));
+      await client.query("UPDATE orders SET exits_sent = true WHERE id = $1", [e.id]);
     });
-    for (const [i, exit] of exits.entries()) {
-      await this.send(o.user_id, ids[i]!, o.portfolio_id, exit);
+    for (const [i, x] of toSend.entries()) {
+      try {
+        await this.send(e.user_id, ids[i]!, e.portfolio_id, x);
+      } catch (err) {
+        if (!(err instanceof EngineDown)) throw err;
+        // Lost the exchange mid-way: mark it so the reconnect sweep sends it again.
+        await this.db.query(
+          `UPDATE orders SET status = 'rejected', leaves = 0, reject_reason = 'exchange_unavailable'
+           WHERE id = $1 AND status = 'pending'`,
+          [ids[i]],
+        );
+      }
     }
   }
 
@@ -361,6 +439,19 @@ export class OrderService extends EventEmitter {
     for (const r of rows) {
       const order = await this.get(r.user_id, r.id);
       if (order) this.emit(`user:${r.user_id}`, order);
+    }
+    // Brackets whose entry finished while the exchange was away, or whose exits it
+    // refused or couldn't be resized, get synced now. Not awaited: this runs inside the
+    // event queue, and sending waits on that queue.
+    const brackets = await this.db.query(
+      `SELECT id FROM orders o WHERE take_profit IS NOT NULL AND parent_id IS NULL AND filled_qty > 0
+         AND status IN ('filled', 'cancelled')
+         AND (NOT exits_sent OR EXISTS (
+           SELECT 1 FROM orders c WHERE c.parent_id = o.id AND (c.status IN ('pending', 'open', 'partially_filled')
+             OR c.reject_reason = 'exchange_unavailable')))`,
+    );
+    for (const r of brackets.rows) {
+      this.serial(r.id, () => this.syncExits(r.id)).catch((err) => this.emit("error", err));
     }
     return rows.length;
   }

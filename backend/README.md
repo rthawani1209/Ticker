@@ -40,7 +40,7 @@ All prices are in cents. Authenticated routes take `Authorization: Bearer <acces
 
 WebSocket at `/ws` (pass `?token=` or send `{"op":"auth","token":...}`), then `{"op":"subscribe","channel":...}` for `book:NOVA`, `trades:NOVA`, `status` or `me:orders`. Signed-in sockets can also trade: `{"op":"order","ref":"a1","order":{...same body as POST /v1/orders}}` and `{"op":"cancel","ref":"a2","id":123}`, answered on the `order`, `cancel` or `error` channel with the same `ref`. Same checks and the same 20 orders/second limit as REST.
 
-Bracket orders: when the entry order is done (filled, or cancelled after a partial fill), the gateway sends two exits for the filled quantity, a take-profit limit and a stop-loss stop. The first exit to fill cancels the other. The exits skip the buying-power check (they only close what the entry opened), and the check counts a bracket's two exits once.
+Bracket orders: the gateway keeps both exits (a take-profit limit and a stop-loss stop) working for exactly what they protect, which is the entry's filled quantity minus what the exits have closed, capped at the shares you hold. They go out when the entry is done. A partial fill of one shrinks the other, and a full fill cancels it. If you sell the shares some other way, the exits shrink or cancel rather than open a short. If the exchange is down, the reconnect sweep catches up. The exits skip the buying-power check for that reason, and the check counts a bracket's two exits once.
 
 ## Known limits
 

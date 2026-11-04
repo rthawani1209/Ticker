@@ -207,4 +207,117 @@ describe("bracket orders", () => {
     const extra = await place(alice.token, { symbol: "HELX", side: "sell", price: 63_00, qty: 1 });
     expect(extra.statusCode).toBe(201);
   });
+
+  async function exitsOf(token: string, entryId: number) {
+    const res = await b.app.inject({ url: "/v1/orders?limit=200", headers: auth(token) });
+    return (res.json() as any[]).filter((o) => o.parentId === entryId);
+  }
+  const working = (o: any) => ["pending", "open", "partially_filled"].includes(o.status);
+
+  it("sends the exits after a reconnect if the entry filled while the exchange was away", async () => {
+    const [alice, seller] = [await signUp(b), await signUp(b)];
+    await place(seller.token, { symbol: "BRKL", side: "sell", price: 74_50, qty: 10 });
+
+    // Drop the connection right after the entry is acknowledged, before its fill is handled.
+    const bridge = b.bridge as any;
+    const submit = bridge.submit.bind(bridge);
+    bridge.submit = async (...args: unknown[]) => {
+      const reply = await submit(...args);
+      bridge.connected = false;
+      return reply;
+    };
+    const entry = (
+      await place(alice.token, {
+        symbol: "BRKL",
+        side: "buy",
+        price: 74_50,
+        qty: 10,
+        takeProfit: 76_00,
+        stopLoss: 73_00,
+      })
+    ).json();
+    bridge.submit = submit;
+    expect(entry.status).toBe("filled");
+    await new Promise((r) => setTimeout(r, 200));
+    expect(await exitsOf(alice.token, entry.id)).toHaveLength(0);
+
+    // Back up: the reconnect sweep sends both.
+    bridge.connected = true;
+    await b.orders.reconcile();
+    const exits = await until(async () => {
+      const e = (await exitsOf(alice.token, entry.id)).filter((o) => o.status === "open");
+      return e.length === 2 ? e : null;
+    });
+    expect(exits?.map((o) => o.type).sort()).toEqual(["limit", "stop"]);
+  });
+
+  it("shrinks the other exit when one fills partway", async () => {
+    const [alice, seller, buyer] = [await signUp(b), await signUp(b), await signUp(b)];
+    await place(seller.token, { symbol: "QSTR", side: "sell", price: 12_00, qty: 100 });
+    const entry = (
+      await place(alice.token, {
+        symbol: "QSTR",
+        side: "buy",
+        price: 12_00,
+        qty: 100,
+        takeProfit: 12_50,
+        stopLoss: 11_50,
+      })
+    ).json();
+    await until(async () => (await exitsOf(alice.token, entry.id)).filter(working).length === 2);
+
+    // 40 of 100 go at the take-profit: 60 shares are left, so the stop should cover 60.
+    await place(buyer.token, { symbol: "QSTR", side: "buy", price: 12_50, qty: 40 });
+    const exits = await until(async () => {
+      const live = (await exitsOf(alice.token, entry.id)).filter(working);
+      const stop = live.find((o) => o.type === "stop");
+      return stop?.leaves === 60 && stop.status === "open" && live.length === 2 ? live : null;
+    });
+    expect(exits).not.toBeNull();
+    expect(exits!.find((o) => o.type === "limit")).toMatchObject({ leaves: 60, filledQty: 40 });
+  });
+
+  it("never lets exits sell more than you hold, so they can't open a short", async () => {
+    const [alice, seller, buyer] = [await signUp(b), await signUp(b), await signUp(b)];
+    const league = (
+      await b.app.inject({
+        method: "POST",
+        url: "/v1/leagues",
+        headers: auth(alice.token),
+        payload: { name: "No shorts", allowShort: false },
+      })
+    ).json();
+
+    // The entry buys 10 of 20, and alice sells those 10 before the rest fills.
+    await place(seller.token, { symbol: "ORBT", side: "sell", price: 310_00, qty: 10 });
+    const entry = (
+      await place(alice.token, {
+        symbol: "ORBT",
+        side: "buy",
+        price: 310_00,
+        qty: 20,
+        takeProfit: 315_00,
+        stopLoss: 305_00,
+        league: league.id,
+      })
+    ).json();
+    expect(entry.status).toBe("partially_filled");
+    await place(buyer.token, { symbol: "ORBT", side: "buy", price: 311_00, qty: 10 });
+    const sold = await place(alice.token, {
+      symbol: "ORBT",
+      side: "sell",
+      price: 311_00,
+      qty: 10,
+      league: league.id,
+    });
+    expect(sold.json().status).toBe("filled");
+    await place(seller.token, { symbol: "ORBT", side: "sell", price: 310_00, qty: 10 });
+
+    // The entry filled 20 in total but alice only holds 10, so each exit is for 10.
+    const exits = await until(async () => {
+      const live = (await exitsOf(alice.token, entry.id)).filter(working);
+      return live.length === 2 ? live : null;
+    });
+    expect(exits?.map((o) => o.qty)).toEqual([10, 10]);
+  });
 });

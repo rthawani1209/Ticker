@@ -174,6 +174,18 @@ export class EngineBridge extends EventEmitter {
     });
   }
 
+  // Fire and forget: the result shows up as a Replaced (or Reject) event.
+  replace(
+    account: number,
+    clOrdId: number,
+    orderId: number,
+    symbol: number,
+    qty: number,
+    price: number,
+  ): void {
+    this.write(p.replace(account, clOrdId, orderId, symbol, qty, price));
+  }
+
   // Asks the engine to cancel. Success shows up as a Cancelled event for the order;
   // this resolves with a Reject if the engine refused (e.g. the order already filled),
   // or null otherwise.
