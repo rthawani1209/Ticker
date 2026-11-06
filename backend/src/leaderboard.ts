@@ -20,12 +20,17 @@ export interface Standing {
 
 const YEAR_S = 365 * 24 * 3600;
 
+// Below this many snapshot-to-snapshot returns (half an hour at the default interval)
+// the annualized number is mostly noise: two minutes of history can come out at -800.
+// So the board and the Portfolio screen show no Sharpe until there's enough.
+export const MIN_SHARPE_RETURNS = 30;
+
 // Annualized Sharpe ratio of a series of equity values taken every intervalS seconds,
-// with a risk-free rate of zero. Needs at least two returns and some variation.
-export function sharpeRatio(equity: number[], intervalS: number): number | null {
+// with a risk-free rate of zero. Needs minReturns returns (at least 2) and some variation.
+export function sharpeRatio(equity: number[], intervalS: number, minReturns = 2): number | null {
   const returns: number[] = [];
   for (let i = 1; i < equity.length; i++) returns.push(equity[i]! / equity[i - 1]! - 1);
-  if (returns.length < 2) return null;
+  if (returns.length < Math.max(2, minReturns)) return null;
   const mean = returns.reduce((a, b) => a + b, 0) / returns.length;
   const variance = returns.reduce((a, r) => a + (r - mean) ** 2, 0) / (returns.length - 1);
   if (variance === 0) return null;
@@ -42,6 +47,7 @@ export class Leaderboard {
     private symbolIds: number[],
     private redis?: Redis,
     readonly snapshotEveryS = 60,
+    readonly minSharpeReturns = MIN_SHARPE_RETURNS,
   ) {}
 
   start(everyMs = 1000): void {
@@ -102,7 +108,7 @@ export class Leaderboard {
     const leagueOf = new Map<number, number>(rows.map((r) => [r.id, r.league_id]));
     const sharpe = new Map<number, Array<[number, number]>>();
     for (const h of history.rows) {
-      const s = sharpeRatio(h.equity.map(Number), this.snapshotEveryS);
+      const s = sharpeRatio(h.equity.map(Number), this.snapshotEveryS, this.minSharpeReturns);
       if (s === null) continue;
       const league = leagueOf.get(h.portfolio_id)!;
       const list = sharpe.get(league) ?? [];
@@ -156,23 +162,28 @@ export class Leaderboard {
     const other = await this.scores(`lb:${leagueId}:${by === "return" ? "sharpe" : "return"}`, ids);
     const { rows } = await this.db.query(
       `SELECT pf.id, u.username, l.starting_cash FROM portfolios pf
-       JOIN users u ON u.id = pf.user_id JOIN leagues l ON l.id = pf.league_id WHERE pf.id = ANY($1)`,
-      [ids],
+       JOIN users u ON u.id = pf.user_id JOIN leagues l ON l.id = pf.league_id
+       WHERE pf.id = ANY($1) AND pf.league_id = $2`,
+      [ids, leagueId],
     );
     const info = new Map<number, { username: string; starting_cash: number }>(
       rows.map((r) => [r.id, r]),
     );
-    return ranked.map(([id, score], i) => {
-      const returnPct = by === "return" ? score : (other.get(id) ?? 0);
-      const startingCash = info.get(id)?.starting_cash ?? 0;
-      return {
-        rank: i + 1,
-        portfolioId: id,
-        username: info.get(id)?.username ?? "?",
-        equity: Math.round(startingCash * (1 + returnPct)),
-        returnPct,
-        sharpe: by === "sharpe" ? score : (other.get(id) ?? null),
-      };
-    });
+    // Redis can outlive the database (a restored backup, a reset staging DB), so skip
+    // any ranked id that isn't a portfolio in this league any more.
+    return ranked
+      .filter(([id]) => info.has(id))
+      .map(([id, score], i) => {
+        const returnPct = by === "return" ? score : (other.get(id) ?? 0);
+        const startingCash = info.get(id)!.starting_cash;
+        return {
+          rank: i + 1,
+          portfolioId: id,
+          username: info.get(id)!.username,
+          equity: Math.round(startingCash * (1 + returnPct)),
+          returnPct,
+          sharpe: by === "sharpe" ? score : (other.get(id) ?? null),
+        };
+      });
   }
 }

@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
@@ -19,7 +19,28 @@ const COOKIE = "ticker_rt";
 
 export default async function authRoutes(app: FastifyInstance) {
   const { db, tokens, config } = app.deps;
-  const authLimit = { rateLimit: { max: 10, timeWindow: 60_000 } };
+  // Limits are sized for a classroom on one shared IP: 30 sign-ups or 60 logins a
+  // minute per IP, but only 10 password guesses a minute per account, and refreshes
+  // are counted per session rather than per IP.
+  const perIp = (max: number) => ({
+    rateLimit: { max, timeWindow: 60_000, keyGenerator: (req: FastifyRequest) => req.ip },
+  });
+  const guessesPerAccount = app.createRateLimit({
+    max: 10,
+    timeWindow: 60_000,
+    keyGenerator: (req) =>
+      `login:${String((req.body as { email?: unknown })?.email).toLowerCase()}`,
+  });
+  const perSession = {
+    rateLimit: {
+      max: 10,
+      timeWindow: 60_000,
+      keyGenerator: (req: FastifyRequest) => {
+        const token = req.cookies[COOKIE];
+        return token ? `rt:${createHash("sha256").update(token).digest("hex")}` : req.ip;
+      },
+    },
+  };
 
   const setRefreshCookie = (reply: FastifyReply, token: string) =>
     reply.setCookie(COOKIE, token, {
@@ -44,7 +65,7 @@ export default async function authRoutes(app: FastifyInstance) {
     };
   }
 
-  app.post("/register", { config: authLimit }, async (req, reply) => {
+  app.post("/register", { config: perIp(30) }, async (req, reply) => {
     const body = Register.parse(req.body);
     const hash = await hashPassword(body.password);
     // New users start with a portfolio in the practice league.
@@ -90,8 +111,14 @@ export default async function authRoutes(app: FastifyInstance) {
     },
   );
 
-  app.post("/login", { config: authLimit }, async (req, reply) => {
+  app.post("/login", { config: perIp(60) }, async (req, reply) => {
     const body = Login.parse(req.body);
+    // isAllowed only means "on the allow list"; isExceeded is the real answer.
+    const limit = await guessesPerAccount(req);
+    if (!limit.isAllowed && limit.isExceeded)
+      return reply
+        .code(429)
+        .send({ error: "rate_limited", message: "too many attempts, wait a minute" });
     const { rows } = await db.query(
       "SELECT id, username, role, password_hash FROM users WHERE email = $1",
       [body.email],
@@ -106,7 +133,7 @@ export default async function authRoutes(app: FastifyInstance) {
     return session(reply, user, await tokens.issueRefresh(user.id, meta(req)));
   });
 
-  app.post("/refresh", { config: authLimit }, async (req, reply) => {
+  app.post("/refresh", { config: perSession }, async (req, reply) => {
     const token = req.cookies[COOKIE];
     if (!token) return reply.code(401).send({ error: "no_session", message: "not logged in" });
     const result = await tokens.rotate(token, meta(req));

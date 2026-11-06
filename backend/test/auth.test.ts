@@ -161,18 +161,62 @@ describe("auth", () => {
     expect(rows).toEqual([{ ip: "10.7.7.7" }]);
   });
 
-  it("rate limits login attempts", async () => {
+  it("rate limits password guesses per account, even from different IPs", async () => {
     const codes: number[] = [];
     for (let i = 0; i < 12; i++) {
       const res = await b.app.inject({
         method: "POST",
         url: "/v1/auth/login",
-        remoteAddress: "10.9.9.9",
-        payload: { email: "alice@example.com", password: "guessing guess" },
+        remoteAddress: `10.9.9.${i}`,
+        payload: { email: "Victim@example.com", password: "guessing guess" },
       });
       codes.push(res.statusCode);
     }
     expect(codes.slice(0, 10).every((c) => c === 401)).toBe(true);
     expect(codes.slice(10)).toEqual([429, 429]);
+  });
+
+  it("lets a whole class log in and refresh from one shared IP", async () => {
+    // 40 different accounts behind one campus NAT: none of them hit the per-account limit.
+    const codes = new Set<number>();
+    for (let i = 0; i < 40; i++) {
+      const res = await b.app.inject({
+        method: "POST",
+        url: "/v1/auth/login",
+        remoteAddress: "10.7.7.7",
+        payload: { email: `student${i}@example.com`, password: "wrong password" },
+      });
+      codes.add(res.statusCode);
+    }
+    expect([...codes]).toEqual([401]);
+
+    // Refreshes are counted per session, so 15 students refreshing at once all succeed.
+    const sessions = [];
+    for (let i = 0; i < 15; i++) sessions.push(await signUp(b));
+    for (const s of sessions) {
+      const res = await b.app.inject({
+        method: "POST",
+        url: "/v1/auth/refresh",
+        remoteAddress: "10.7.7.8",
+        cookies: { ticker_rt: s.cookie },
+      });
+      expect(res.statusCode).toBe(200);
+    }
+  });
+
+  it("counts signed-in API calls per user, not per IP", async () => {
+    const [a, c] = [await signUp(b), await signUp(b)];
+    const codes = new Set<number>();
+    for (let i = 0; i < 200; i++) {
+      for (const u of [a, c]) {
+        const res = await b.app.inject({
+          url: "/v1/positions",
+          remoteAddress: "10.7.7.9",
+          headers: auth(u.token),
+        });
+        codes.add(res.statusCode);
+      }
+    }
+    expect([...codes]).toEqual([200]); // 400 calls from one IP, but 200 per user
   });
 });

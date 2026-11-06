@@ -73,13 +73,15 @@ export async function startBackend() {
   if (redis) await redis.flushdb();
   const fanout = redis ? new RedisFanout(redis) : new LocalFanout();
   if (fanout instanceof RedisFanout) await fanout.ready;
-  // Tests call leaderboard.refresh() themselves instead of running the timer.
+  // Tests call leaderboard.refresh() themselves instead of running the timer, and
+  // take a Sharpe after 2 returns instead of 30 so they don't need 31 snapshots.
   const leaderboard = new Leaderboard(
     db,
     orders.marks,
     symbols.map((s) => s.id),
     redis,
     60,
+    2,
   );
   const deps = {
     config,

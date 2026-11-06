@@ -56,11 +56,20 @@ export async function buildApp(deps: Deps, opts: { logger?: boolean } = {}) {
   await app.register(helmet);
   await app.register(cors, { origin: deps.config.CORS_ORIGIN.split(","), credentials: true });
   await app.register(cookie);
+  // Signed-in requests are counted per user, everything else per IP. A whole class
+  // behind one campus NAT shares an IP, so a per-IP limit alone would lock them out.
   await app.register(rateLimit, {
     max: 300,
     timeWindow: 60_000,
     redis: deps.redis,
     nameSpace: "ticker-rl:",
+    keyGenerator: async (req) => {
+      const header = req.headers.authorization;
+      const claims = header?.startsWith("Bearer ")
+        ? await deps.tokens.verifyAccess(header.slice(7))
+        : null;
+      return claims ? `u${claims.userId}` : req.ip;
+    },
   });
   await app.register(websocket, { options: { maxPayload: 4096 } });
 

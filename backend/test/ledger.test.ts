@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { applyTrade, rebuild } from "../src/ledger.js";
-import { sharpeRatio } from "../src/leaderboard.js";
+import { MIN_SHARPE_RETURNS, sharpeRatio } from "../src/leaderboard.js";
 import { auth, signUp, startBackend, type Backend } from "./harness.js";
 
 describe("position math", () => {
@@ -48,6 +48,10 @@ describe("sharpe ratio", () => {
   it("needs at least two returns that vary", () => {
     expect(sharpeRatio([100, 101], 60)).toBeNull();
     expect(sharpeRatio([100, 100, 100], 60)).toBeNull();
+    // Too little history for the production threshold.
+    const short = [100, 101, 99, 102, 100];
+    expect(sharpeRatio(short, 60)).not.toBeNull();
+    expect(sharpeRatio(short, 60, MIN_SHARPE_RETURNS)).toBeNull();
   });
 });
 
@@ -454,5 +458,42 @@ describe("leaderboard", () => {
     expect(bySharpe[0].sharpe).toBeGreaterThan(0);
     expect(bySharpe.at(-1).username).toBe(bear.name);
     expect(bySharpe.at(-1).sharpe).toBeLessThan(0);
+
+    // A ranking left in Redis for a portfolio the database no longer has is skipped.
+    await b.redis?.zadd(`lb:${league.id}:return`, 9, "987654321");
+    const cleaned = (await get(owner, `/v1/leagues/${league.id}/leaderboard`)).json();
+    expect(cleaned.map((s: any) => s.portfolioId)).not.toContain(987654321);
+    expect(cleaned[0].rank).toBe(1);
+  });
+
+  it("reports a portfolio's equity curve, drawdown and win rate", async () => {
+    const [a, c, d] = [await signUp(b), await signUp(b), await signUp(b)];
+    const cross = async (buyer: User, seller: User, price: number, qty: number) => {
+      await place(seller, { symbol: "MESA", side: "sell", price, qty });
+      const res = await place(buyer, { symbol: "MESA", side: "buy", price, qty, tif: "ioc" });
+      expect(res.json().status).toBe("filled");
+    };
+    await cross(a, d, 192_00, 10); // a opens long 10
+    await b.orders.settled();
+    await b.leaderboard.refresh({ snapshot: true });
+    await cross(c, a, 194_00, 10); // a closes at +$2 a share; c is now long 10
+    await cross(c, d, 191_00, 1); // the price drops $3 under c
+    await b.orders.settled();
+    await b.leaderboard.refresh({ snapshot: true });
+
+    const forA = (await get(a, "/v1/positions/analytics")).json();
+    expect(forA).toMatchObject({ roundTrips: 1, wins: 1, winRate: 1, returnPct: 0.0002 });
+    expect(forA.equity).toBe(100_000_00 + 20_00);
+    expect(forA.history.length).toBeGreaterThanOrEqual(3); // two snapshots + now
+    expect(forA.history.at(-1).equity).toBe(forA.equity);
+
+    const forC = (await get(c, "/v1/positions/analytics")).json();
+    expect(forC).toMatchObject({ roundTrips: 0, wins: 0, winRate: null });
+    // Bought 10 at $194 and 1 at $191, marked at $191: down $30 from the $100k start.
+    expect(forC.equity).toBe(100_000_00 - 30_00);
+    expect(forC.maxDrawdown).toBeCloseTo(30_00 / 100_000_00, 8);
+
+    const elsewhere = await get(a, "/v1/positions/analytics?league=999999");
+    expect(elsewhere.statusCode).toBe(404);
   });
 });

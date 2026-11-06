@@ -7,6 +7,8 @@ import { z } from "zod";
 
 import { audit } from "../audit.js";
 import { ApiError } from "../errors.js";
+import { downsample, maxDrawdown, winRate, type EquityPoint } from "../analytics.js";
+import { sharpeRatio } from "../leaderboard.js";
 import { LEAGUE_COLUMNS, toLeague } from "../ledger.js";
 
 const ORDER_TYPES = ["limit", "market", "stop", "stop_limit"] as const;
@@ -174,19 +176,22 @@ export default async function leagueRoutes(app: FastifyInstance) {
 
 // GET /v1/positions?league=ID: cash, holdings valued at the last price, and profit
 // and loss, for one of your portfolios (the practice one by default).
+// GET /v1/positions/analytics?league=ID: the equity curve and its statistics.
 export async function positionRoutes(app: FastifyInstance) {
-  const { db, orders, symbols } = app.deps;
+  const { db, leaderboard, orders, symbols } = app.deps;
   app.addHook("preHandler", app.authenticate);
 
-  app.get("/", async (req) => {
-    const { league } = LeagueQuery.parse(req.query);
+  async function portfolioFor(userId: number, league: number | undefined) {
     const { rows } = await db.query(
       `SELECT pf.id, pf.cash, pf.league_id, l.starting_cash FROM portfolios pf JOIN leagues l ON l.id = pf.league_id
        WHERE pf.user_id = $1 AND ${league === undefined ? "l.is_practice" : "l.id = $2"}`,
-      league === undefined ? [req.user.userId] : [req.user.userId, league],
+      league === undefined ? [userId] : [userId, league],
     );
-    const pf = rows[0];
-    if (!pf) throw new ApiError(404, "not_a_member", "you're not in that league");
+    if (!rows[0]) throw new ApiError(404, "not_a_member", "you're not in that league");
+    return rows[0] as { id: number; cash: number; league_id: number; starting_cash: number };
+  }
+
+  async function valued(pf: { id: number; cash: number }) {
     const held = await db.query(
       "SELECT symbol_id, qty, cost, realized FROM positions WHERE portfolio_id = $1 ORDER BY symbol_id",
       [pf.id],
@@ -206,6 +211,13 @@ export async function positionRoutes(app: FastifyInstance) {
         realized: p.realized,
       };
     });
+    return { equity, positions };
+  }
+
+  app.get("/", async (req) => {
+    const { league } = LeagueQuery.parse(req.query);
+    const pf = await portfolioFor(req.user.userId, league);
+    const { equity, positions } = await valued(pf);
     return {
       league: pf.league_id,
       cash: pf.cash,
@@ -213,6 +225,54 @@ export async function positionRoutes(app: FastifyInstance) {
       startingCash: pf.starting_cash,
       returnPct: (equity - pf.starting_cash) / pf.starting_cash,
       positions,
+    };
+  });
+
+  app.get("/analytics", async (req) => {
+    const { league } = LeagueQuery.parse(req.query);
+    const pf = await portfolioFor(req.user.userId, league);
+    const { equity } = await valued(pf);
+    const [snaps, fills] = await Promise.all([
+      db.query("SELECT at, equity FROM equity_snapshots WHERE portfolio_id = $1 ORDER BY at", [
+        pf.id,
+      ]),
+      db.query(
+        "SELECT symbol_id, side, price, qty, commission FROM fills WHERE portfolio_id = $1 ORDER BY id",
+        [pf.id],
+      ),
+    ]);
+    // The curve starts at the starting cash and ends at the live value.
+    const curve: EquityPoint[] = snaps.rows.map((r) => ({
+      at: new Date(r.at).getTime(),
+      equity: Number(r.equity),
+    }));
+    curve.push({ at: Date.now(), equity });
+    const values = [pf.starting_cash, ...curve.map((p) => p.equity)];
+    const trades = winRate(
+      fills.rows.map((f) => ({
+        symbolId: f.symbol_id,
+        side: f.side,
+        price: Number(f.price),
+        qty: f.qty,
+        commission: Number(f.commission),
+      })),
+    );
+    return {
+      league: pf.league_id,
+      startingCash: pf.starting_cash,
+      equity,
+      returnPct: (equity - pf.starting_cash) / pf.starting_cash,
+      maxDrawdown: maxDrawdown(values),
+      // Same definition as the Sharpe leaderboard: snapshot returns, annualized.
+      sharpe: sharpeRatio(
+        snaps.rows.map((r) => Number(r.equity)),
+        leaderboard.snapshotEveryS,
+        leaderboard.minSharpeReturns,
+      ),
+      winRate: trades.rate,
+      roundTrips: trades.closed,
+      wins: trades.wins,
+      history: downsample(curve, 500),
     };
   });
 }
