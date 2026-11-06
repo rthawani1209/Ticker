@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import WebSocket from "ws";
 
-import { auth, signUp, startBackend, type Backend } from "./harness.js";
+import { auth, connectWs, signUp, startBackend, type Backend } from "./harness.js";
 
 let b: Backend;
 let url: string;
@@ -14,28 +14,7 @@ beforeAll(async () => {
 });
 afterAll(() => b?.stop());
 
-function connect(query = ""): Promise<{ ws: WebSocket; next: (channel: string) => Promise<any> }> {
-  return new Promise((resolve, reject) => {
-    const ws = new WebSocket(url + query);
-    const queue: any[] = [];
-    const waiting: { channel: string; resolve: (d: any) => void }[] = [];
-    ws.on("message", (raw) => {
-      const msg = JSON.parse(raw.toString());
-      const i = waiting.findIndex((w) => w.channel === msg.channel);
-      if (i >= 0) waiting.splice(i, 1)[0]!.resolve(msg.data);
-      else queue.push(msg);
-    });
-    const next = (channel: string) =>
-      new Promise<any>((res, rej) => {
-        const i = queue.findIndex((m) => m.channel === channel);
-        if (i >= 0) return res(queue.splice(i, 1)[0].data);
-        waiting.push({ channel, resolve: res });
-        setTimeout(() => rej(new Error(`no message on ${channel}`)), 3000);
-      });
-    ws.on("open", () => resolve({ ws, next }));
-    ws.on("error", reject);
-  });
-}
+const connect = (query = "") => connectWs(url + query);
 
 const send = (ws: WebSocket, msg: object) => ws.send(JSON.stringify(msg));
 const place = (token: string, payload: object) =>

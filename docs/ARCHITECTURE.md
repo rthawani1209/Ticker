@@ -46,6 +46,7 @@ Everything that trades goes through the same door. Browsers and student bots use
 - **Live data and trading on one socket.** WebSocket channels for the book, trades, halts and your own orders. A signed-in socket can also send `order` and `cancel` messages; they go through the same validation, buying-power check and rate limit as REST, and the reply carries the client's `ref` so the browser can match it up.
 - **Bracket orders.** An entry order can carry a take-profit and a stop-loss. The gateway keeps both exits working for exactly the quantity they protect: what the entry filled, minus what the exits have already closed, capped at the shares actually held. So the exits go out when the entry is done; a partial fill of one shrinks the other (a limit is amended in place, and a stop, which the engine can't amend, is cancelled and re-sent smaller); a full fill cancels the other; and if the shares were sold some other way, the exits shrink or cancel instead of turning into a short. This runs one bracket at a time after every relevant fill, ack or cancel. If the exchange is down at that moment, the reconnect sweep runs it again. The buying-power check counts a bracket's two exits once.
 - **Guests.** `POST /v1/auth/guest` makes an account with no email or password and a $100k practice portfolio, so the landing page's "Try it with $100k" needs no sign-up. Guests can't create or join leagues.
+- **Several gateways, one feed.** Public market data goes through a fan-out (`backend/src/ws/fanout.ts`). One gateway (`MARKET_PUBLISHER=true`) turns engine events into channel messages and publishes them to the Redis channel `ticker:md`; every gateway, that one included, subscribes and pushes them to its own sockets. So you can add gateways behind a load balancer and each client still gets every trade once. A new book subscriber gets its snapshot from the local gateway's copy of the book and then the deltas from Redis. That can briefly overlap, but deltas carry the absolute size at a price level, so the next change at that level corrects it. Without Redis, a single gateway uses an in-process fan-out. Private order updates don't go through Redis: they come from the gateway that holds the user's socket.
 - **Limits.** Per-IP login limits and per-user order limits, kept in Redis so they hold across several gateway instances.
 
 ## The ledger
@@ -62,6 +63,8 @@ The engine only knows accounts and orders. Money lives in the ledger (`backend/s
 ## The market simulator
 
 Each company has a hidden "true value" that drifts randomly and jumps when news comes out. Market makers quote around a lagged estimate of it. News traders react to headlines within a few seconds. Momentum traders chase trends and protect themselves with stop orders. Noise traders add random flow. Scenario files script events like a fraud allegation that triggers a crash and trips the circuit breaker.
+
+The true values move as a one-factor model in NumPy: each step, every stock gets a shared market shock plus its own, so stocks drift together a little (correlation 0.3 by default) instead of independently. With `--redis-url`, each headline is also published to `ticker:md` on the `news` channel, and the gateways push it to the browser like any other market data.
 
 ## Data
 

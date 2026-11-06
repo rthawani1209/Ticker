@@ -8,6 +8,7 @@ import logging
 import random
 import time
 from collections import Counter
+from collections.abc import Callable
 from typing import IO
 
 from . import protocol as p
@@ -28,7 +29,8 @@ PRIVATE = {p.EventType.ACK, p.EventType.REJECT, p.EventType.FILL, p.EventType.CA
 
 
 class Simulator:
-    def __init__(self, scenario: Scenario, seed: int = 1, news_out: IO[str] | None = None) -> None:
+    def __init__(self, scenario: Scenario, seed: int = 1, news_out: IO[str] | None = None,
+                 on_headline: Callable[[dict], None] | None = None) -> None:
         self.scenario = scenario
         self.rng = random.Random(seed)
         self.market = Market()
@@ -36,6 +38,7 @@ class Simulator:
         self.news = NewsEngine(random.Random(self.rng.random()), scenario.news_per_minute,
                                kind_weights=scenario.news_weights)
         self.news_out = news_out
+        self.on_headline = on_headline
         self.client = EngineClient(self.on_message)
         self.ctx = Context(self.market, self.fair, self.client.send)
         self.bots: list[Bot] = []
@@ -142,6 +145,8 @@ class Simulator:
         if self.news_out is not None:
             self.news_out.write(json.dumps(item.to_json()) + "\n")
             self.news_out.flush()
+        if self.on_headline is not None:
+            self.on_headline(item.to_json())
         for bot in self.bots:
             bot.on_news(item)
 

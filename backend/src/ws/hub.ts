@@ -3,12 +3,17 @@
 //   book:TICKER    full depth on subscribe, then one message per level change
 //   trades:TICKER  each trade
 //   status         halts and resumes
+//   news           headlines from the market simulator
 //   me:orders      your order updates and fills (needs a token)
 //
 // Signed-in clients can also trade over the socket, with the same rules as REST:
 //   {"op":"order","ref":"a1","order":{...same body as POST /v1/orders}}  -> {"channel":"order","data":{"ref","order"}}
 //   {"op":"cancel","ref":"a2","id":123}                                  -> {"channel":"cancel","data":{"ref","order"}}
 // Failures come back on the "error" channel with the same ref.
+//
+// Public market data goes through the fan-out (see fanout.ts), so any number of
+// gateways can serve the same feed. Private order updates come straight from this
+// process's OrderService.
 import type { FastifyInstance } from "fastify";
 import type { WebSocket } from "ws";
 import { z } from "zod";
@@ -41,7 +46,7 @@ interface Client {
 }
 
 export default async function wsRoutes(app: FastifyInstance) {
-  const { bridge, db, orders, symbols, symbolsByTicker, tokens } = app.deps;
+  const { bridge, config, db, fanout, orders, symbols, symbolsByTicker, tokens } = app.deps;
   const subscribers = new Map<string, Set<Client>>();
 
   const send = (c: Client, channel: string, data: unknown) => {
@@ -53,10 +58,12 @@ export default async function wsRoutes(app: FastifyInstance) {
     c.ws.send(JSON.stringify({ channel, data }));
   };
 
-  const publish = (channel: string, data: unknown) => {
+  const deliver = (channel: string, data: unknown) => {
     const subs = subscribers.get(channel);
     if (subs) for (const c of subs) send(c, channel, data);
   };
+  const unsubscribe = fanout.subscribe(deliver);
+  const publish = (channel: string, data: unknown) => fanout.publish(channel, data);
 
   const onMarket = (e: p.EngineEvent) => {
     const ticker = symbols[e.symbol]?.ticker;
@@ -83,9 +90,10 @@ export default async function wsRoutes(app: FastifyInstance) {
       });
     }
   };
-  bridge.on("market", onMarket);
+  if (config.MARKET_PUBLISHER) bridge.on("market", onMarket);
   app.addHook("onClose", async () => {
     bridge.off("market", onMarket);
+    unsubscribe();
   });
 
   function subscribe(c: Client, channel: string): string | null {
@@ -98,7 +106,7 @@ export default async function wsRoutes(app: FastifyInstance) {
       if (kind === "book") send(c, channel, { snapshot: true, ...bridge.books[sym.id]!.depth(50) });
     } else if (channel === "me:orders") {
       if (c.userId === null) return "auth first";
-    } else if (channel !== "status") {
+    } else if (channel !== "status" && channel !== "news") {
       return "unknown channel";
     }
     c.channels.add(channel);

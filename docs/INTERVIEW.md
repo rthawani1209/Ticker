@@ -69,7 +69,13 @@ A timer values every portfolio in one SQL query (cash plus quantity times the la
 
 **How do bracket orders work if the exchange doesn't know about them?**
 The gateway runs them. The entry is a normal order that remembers its take-profit and stop-loss. After any fill, ack or cancel that touches a bracket, one function works out how many shares the exits should cover (entry filled, minus what the exits already sold, capped at what you actually hold) and fixes the exits to match: send them if they're missing, shrink them if they're too big, cancel them if it's zero. That one rule covers the cases people get wrong: a take-profit filling 40 of 100 leaves a stop for 60, not 100 and not nothing; an exit acknowledged after its sibling already filled shrinks itself; and selling the shares by hand can't leave an exit that would short them. If the exchange is down when it runs, the reconnect sweep runs it again.
+*Known gap:* the engine can amend a resting limit order but not a waiting stop. So when a stop-loss has to shrink, the gateway cancels it and sends a smaller one. Between the cancel and the new stop's ack (a few milliseconds), the shares it covered have no stop. The proper fix is a stop amend message in the engine.
 *Follow-up: why not put brackets in the engine?* It would be faster, but the engine stays a plain matching engine with nothing that only Ticker needs, and a bracket's timing is human speed anyway.
+
+**How does live data reach thousands of browsers?**
+Each gateway keeps WebSocket connections and a map from channel to sockets. One gateway turns the engine's market events into JSON once and publishes them to a Redis pub/sub channel; every gateway subscribes and forwards to its own sockets. Adding a gateway adds sockets without adding load on the engine. Measured with two gateways and 500 clients: p50 9 ms, p99 17 ms on the publishing gateway, no messages lost (`docs/results/ws-delay-2026-11-06.json`).
+*Follow-up: what if a client reads slowly?* Its send buffer grows; past 1 MB the gateway closes it, so one slow phone can't make the server hold everything in memory.
+*Follow-up: what if Redis drops a message?* Pub/sub is fire and forget. A missed trade print just doesn't show in the tape, and book deltas carry absolute sizes, so the next change at that price fixes the ladder.
 
 ## Do this yourself (about an hour)
 

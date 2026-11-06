@@ -1,0 +1,36 @@
+{
+  "date": "2026-11-06T17:37:58.136Z",
+  "what": "trade print -> WebSocket client delay, two gateways sharing Redis pub/sub",
+  "setup": {
+    "gateways": 2,
+    "clients_per_gateway": 250,
+    "trades_requested": 1000,
+    "trades_per_second_target": 50,
+    "trades_per_second_actual": 38.2,
+    "seconds": 26.2,
+    "expected_messages_per_gateway": 250000,
+    "same_process": "both gateways, the order sender and all clients share one Node process, so delays include the clients' own JSON parsing on the same event loop"
+  },
+  "machine": {
+    "cpu": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+    "cores": 4,
+    "node": "v22.22.0",
+    "platform": "linux 6.18.44-fc-v242"
+  },
+  "gateways": {
+    "publisher": {
+      "messages": 250000,
+      "p50_ms": 9,
+      "p95_ms": 14,
+      "p99_ms": 17,
+      "max_ms": 58
+    },
+    "relay": {
+      "messages": 250000,
+      "p50_ms": 6,
+      "p95_ms": 10,
+      "p99_ms": 12,
+      "max_ms": 23
+    }
+  }
+}

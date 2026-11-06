@@ -6,6 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { Redis } from "ioredis";
+import WebSocket from "ws";
 
 import { buildApp } from "../src/app.js";
 import { Tokens } from "../src/auth/tokens.js";
@@ -16,6 +17,7 @@ import { EngineBridge } from "../src/engine/bridge.js";
 import { Leaderboard } from "../src/leaderboard.js";
 import { OrderService } from "../src/orders.js";
 import { loadSymbols } from "../src/symbols.js";
+import { LocalFanout, RedisFanout } from "../src/ws/fanout.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 export const ENGINE_BIN =
@@ -69,6 +71,8 @@ export async function startBackend() {
 
   const redis = process.env.REDIS_URL ? new Redis(process.env.REDIS_URL) : undefined;
   if (redis) await redis.flushdb();
+  const fanout = redis ? new RedisFanout(redis) : new LocalFanout();
+  if (fanout instanceof RedisFanout) await fanout.ready;
   // Tests call leaderboard.refresh() themselves instead of running the timer.
   const leaderboard = new Leaderboard(
     db,
@@ -77,22 +81,26 @@ export async function startBackend() {
     redis,
     60,
   );
-  const app = await buildApp({
+  const deps = {
     config,
     db,
     redis,
+    fanout,
     bridge,
     orders,
     leaderboard,
     tokens: new Tokens(config.JWT_SECRET, db),
     symbols,
     symbolsByTicker: new Map(symbols.map((s) => [s.ticker, s])),
-  });
+  };
+  const app = await buildApp(deps);
   await app.ready();
 
   return {
     app,
+    deps,
     db,
+    redis,
     bridge,
     orders,
     leaderboard,
@@ -100,6 +108,7 @@ export async function startBackend() {
     async stop() {
       bridge.stop();
       await app.close();
+      await fanout.close();
       await db.end();
       redis?.disconnect();
       engine.proc.kill("SIGTERM");
@@ -138,3 +147,34 @@ export async function signUp(b: Backend, name = `user${++n}_${process.pid}`) {
 }
 
 export const auth = (token: string) => ({ authorization: `Bearer ${token}` });
+
+// A WebSocket client whose next(channel) resolves with the next message on that channel.
+export function connectWs(
+  url: string,
+): Promise<{ ws: WebSocket; next: (channel: string, timeoutMs?: number) => Promise<any> }> {
+  return new Promise((resolve, reject) => {
+    const ws = new WebSocket(url);
+    const queue: any[] = [];
+    const waiting: { channel: string; resolve: (d: any) => void }[] = [];
+    ws.on("message", (raw) => {
+      const msg = JSON.parse(raw.toString());
+      const i = waiting.findIndex((w) => w.channel === msg.channel);
+      if (i >= 0) waiting.splice(i, 1)[0]!.resolve(msg.data);
+      else queue.push(msg);
+    });
+    const next = (channel: string, timeoutMs = 3000) =>
+      new Promise<any>((res, rej) => {
+        const i = queue.findIndex((m) => m.channel === channel);
+        if (i >= 0) return res(queue.splice(i, 1)[0].data);
+        const w = { channel, resolve: res };
+        waiting.push(w);
+        setTimeout(() => {
+          const j = waiting.indexOf(w);
+          if (j >= 0) waiting.splice(j, 1);
+          rej(new Error(`no message on ${channel}`));
+        }, timeoutMs);
+      });
+    ws.on("open", () => resolve({ ws, next }));
+    ws.on("error", reject);
+  });
+}

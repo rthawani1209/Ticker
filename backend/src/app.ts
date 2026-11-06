@@ -19,12 +19,14 @@ import leagueRoutes, { positionRoutes } from "./routes/leagues.js";
 import marketRoutes from "./routes/market.js";
 import orderRoutes, { fillRoutes } from "./routes/orders.js";
 import type { SymbolInfo } from "./symbols.js";
+import type { Fanout } from "./ws/fanout.js";
 import wsRoutes from "./ws/hub.js";
 
 export interface Deps {
   config: Config;
   db: Db;
   redis?: Redis;
+  fanout: Fanout;
   bridge: EngineBridge;
   orders: OrderService;
   leaderboard: Leaderboard;

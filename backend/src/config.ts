@@ -10,6 +10,12 @@ const Env = z.object({
   ENGINE_HOST: z.string().default("127.0.0.1"),
   ENGINE_PORT: z.coerce.number().int().default(9100),
   ENGINE_TOKEN: z.coerce.bigint().default(0n),
+  // With several gateways behind Redis, exactly one turns engine events into the
+  // public feed; the rest only relay it. A single gateway keeps the default.
+  MARKET_PUBLISHER: z
+    .enum(["true", "false", "1", "0"])
+    .default("true")
+    .transform((v) => v === "true" || v === "1"),
   CORS_ORIGIN: z.string().default("http://localhost:3000"),
   // How often portfolio values are saved for return charts and the Sharpe ratio.
   SNAPSHOT_INTERVAL_S: z.coerce.number().int().min(1).default(60),

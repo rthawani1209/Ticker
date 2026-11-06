@@ -9,6 +9,7 @@ import os
 import sys
 
 from .scenarios import available, load
+from .redis_news import RedisNews
 from .sim import Simulator
 
 
@@ -22,6 +23,8 @@ def main() -> int:
     ap.add_argument("--duration", type=float, help="seconds to run (default: the scenario's, or forever)")
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--news-out", help="append headlines as JSON lines to this file ('-' for stdout)")
+    ap.add_argument("--redis-url", default=os.environ.get("REDIS_URL"),
+                    help="publish headlines to the backend's live feed (default: $REDIS_URL)")
     ap.add_argument("--list", action="store_true", help="list scenarios and exit")
     ap.add_argument("-v", "--verbose", action="store_true")
     args = ap.parse_args()
@@ -42,8 +45,10 @@ def main() -> int:
     elif args.news_out:
         news_out = open(args.news_out, "a", encoding="utf-8")
 
+    redis_news = RedisNews(args.redis_url) if args.redis_url else None
+
     async def go() -> None:
-        sim = Simulator(scenario, seed=args.seed, news_out=news_out)
+        sim = Simulator(scenario, seed=args.seed, news_out=news_out, on_headline=redis_news)
         await sim.connect(args.host, args.port, args.token)
         try:
             await sim.run(args.duration)

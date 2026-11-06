@@ -9,6 +9,7 @@ import { EngineBridge } from "./engine/bridge.js";
 import { Leaderboard } from "./leaderboard.js";
 import { OrderService } from "./orders.js";
 import { loadSymbols } from "./symbols.js";
+import { LocalFanout, RedisFanout } from "./ws/fanout.js";
 
 const config = loadConfig();
 const db = createPool(config.DATABASE_URL);
@@ -18,6 +19,7 @@ const symbols = await loadSymbols(db);
 const redis = config.REDIS_URL
   ? new Redis(config.REDIS_URL, { maxRetriesPerRequest: 1 })
   : undefined;
+const fanout = redis ? new RedisFanout(redis) : new LocalFanout();
 const bridge = new EngineBridge({
   host: config.ENGINE_HOST,
   port: config.ENGINE_PORT,
@@ -37,6 +39,7 @@ const app = await buildApp(
     config,
     db,
     redis,
+    fanout,
     bridge,
     orders,
     leaderboard,
@@ -73,6 +76,7 @@ for (const sig of ["SIGINT", "SIGTERM"] as const) {
     bridge.stop();
     leaderboard.stop();
     await app.close();
+    await fanout.close();
     await db.end();
     redis?.disconnect();
     process.exit(0);

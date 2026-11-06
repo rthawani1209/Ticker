@@ -19,7 +19,7 @@ jobs:
         run: |
           cmake -S engine -B engine/build -DCMAKE_BUILD_TYPE=Release -DTICKER_BUILD_TESTS=OFF -DTICKER_BUILD_BENCH=OFF
           cmake --build engine/build -j --target ticker-engine
-      - run: pip install pytest
+      - run: pip install pytest numpy
       - name: Test
         working-directory: market-sim
         run: python -m pytest -v

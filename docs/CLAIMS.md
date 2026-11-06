@@ -37,7 +37,8 @@ Status: **done** = built and proven; **partial** = built, proof or number still 
 | News engine with scheduled and surprise headlines | done | `news.py`; `tests/test_news.py` | same | |
 | Scenario cases (earnings week, crash, meme rally, rate shock) | done | `market-sim/scenarios/*.toml`; `tests/test_scenarios.py` | `python -m ticker_sim --list` | 5 cases |
 | Markets stay active with no users | done | `test_engine_integration.py::test_calm_market_trades` | `cd market-sim && python -m pytest tests/test_engine_integration.py` | |
-| asyncio + NumPy price models | partial | asyncio done; NumPy models planned (day 10) | | |
+| asyncio bots + NumPy price model | done | `market-sim/ticker_sim/fair_value.py` (one-factor model, all symbols stepped as one array); `tests/test_fair_value.py` checks the volatility and cross-stock correlation it produces | `cd market-sim && python -m pytest tests/test_fair_value.py` | measured volatility within 5% of the setting, correlation 0.3 ± 0.03 over 20k steps |
+| Live news feed through Redis to the browser | done | `market-sim/ticker_sim/redis_news.py`; `backend/test/fanout.test.ts` (`relays news published by the simulator`); `tests/test_redis_news.py` | `python -m ticker_sim --redis-url redis://localhost:6379` | |
 
 ## Gateway (TypeScript)
 
@@ -52,9 +53,9 @@ Status: **done** = built and proven; **partial** = built, proof or number still 
 | Login and order rate limits in Redis | done | `auth.test.ts` (`rate limits login attempts`), `orders.test.ts` (`rate limits order entry per user`) | same | 10 logins/min per IP, 20 orders/s per user |
 | Zod validation on every input, parameterized SQL only | done | `backend/src/routes/*.ts`; `validates input` tests | same | |
 | Audit trail of logins, orders and cancels | done | `audit_log` table; `refresh_reuse` check in `auth.test.ts` | same | |
-| Integration tests against real Postgres and Redis | done | `backend/test/harness.ts`; `.github/workflows/backend.yml` | same | 63 tests |
-| Redis pub/sub fan-out to WebSocket servers | planned (day 10) | | | |
-| [X] ms WebSocket delay | planned (day 10) | | | |
+| Integration tests against real Postgres and Redis | done | `backend/test/harness.ts`; `.github/workflows/backend.yml` | same | 65 tests |
+| Redis pub/sub fan-out to WebSocket servers | done | `backend/src/ws/fanout.ts`; `backend/test/fanout.test.ts` (two gateways, a client on each gets every trade exactly once) | `cd backend && npx vitest run test/fanout.test.ts` | |
+| WebSocket delay with two gateways | done | [`docs/results/ws-delay-2026-11-06.json`](results/ws-delay-2026-11-06.json); `backend/scripts/ws-delay.ts` | `cd backend && npx tsx scripts/ws-delay.ts` | **p50 9 ms, p99 17 ms** (publishing gateway) and **p50 6 ms, p99 12 ms** (relay) to 500 clients, 250k messages each, no drops; one 4-vCPU VM with clients in the same process |
 | [X] ms p99 end-to-end under load (500 users + 50 bots) | planned (day 12) | | | |
 
 ## Ledger and leagues (TypeScript)
@@ -85,4 +86,4 @@ Status: **done** = built and proven; **partial** = built, proof or number still 
 
 ## Still to come
 
-Redis fan-out, WebSocket delay, NumPy models, Portfolio and League screens (day 10); roles, professor tools, assignments, bot API keys, Python starter kit and fair-play detection (day 11); Docker Compose, load test, Playwright, libFuzzer, CodeQL and the replay test (day 12). Rows get added here as each one lands. Cut on 2026-11-03 and not claimed: Google sign-in, 2FA, the AI coach, admin console, badges, notifications, News and Bot console screens, practice reset, market sessions, ETF arbitrage scenario, device/IP clustering, data export/delete, engine drop-copy, Under-the-hood and overload pages, ZAP, and AWS.
+Portfolio and League screens (day 10); roles, professor tools, assignments, bot API keys, Python starter kit and fair-play detection (day 11); Docker Compose, load test, Playwright, libFuzzer, CodeQL and the replay test (day 12). Rows get added here as each one lands. Cut on 2026-11-03 and not claimed: Google sign-in, 2FA, the AI coach, admin console, badges, notifications, News and Bot console screens, practice reset, market sessions, ETF arbitrage scenario, device/IP clustering, data export/delete, engine drop-copy, Under-the-hood and overload pages, ZAP, and AWS.
