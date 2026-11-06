@@ -77,6 +77,12 @@ Each gateway keeps WebSocket connections and a map from channel to sockets. One 
 *Follow-up: what if a client reads slowly?* Its send buffer grows; past 1 MB the gateway closes it, so one slow phone can't make the server hold everything in memory.
 *Follow-up: what if Redis drops a message?* Pub/sub is fire and forget. A missed trade print just doesn't show in the tape, and book deltas carry absolute sizes, so the next change at that price fixes the ladder.
 
+**Why aren't your rate limits just per IP?**
+A whole class on campus Wi-Fi shares one public IP. With 10 logins a minute per IP, the 11th student is locked out, and the trade screen's polling from 30 students would blow a per-IP API limit in seconds. So signed-in calls are counted per user, password guesses per account (that's what stops brute force), refreshes per session, and only sign-ups and logins keep a looser per-IP cap against bulk abuse. Tests replay a class of 40 from one IP.
+
+**How do you compute max drawdown and win rate?**
+Drawdown: walk the equity curve keeping the highest value so far; the drawdown at each point is how far below that peak it is, as a fraction; take the largest. Win rate: replay the fills with the same average-cost function the ledger uses; every fill that reduces a position closes a round trip, and it's a win if the realized profit on that part, minus commission, is positive.
+
 ## Do this yourself (about an hour)
 
 1. Build and run the tests: `cmake -S engine -B engine/build && cmake --build engine/build -j && ctest --test-dir engine/build`.

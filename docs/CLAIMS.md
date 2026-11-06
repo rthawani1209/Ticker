@@ -50,10 +50,10 @@ Status: **done** = built and proven; **partial** = built, proof or number still 
 | Bracket orders (take-profit + stop-loss, one cancels the other) | done | `syncExits()` in `backend/src/orders.ts`; `trading.test.ts` (`bracket orders`: partial exit fills, reconnect, no shorting through exits) | same | |
 | Guest account with $100k, no sign-up | done | `POST /v1/auth/guest`; `trading.test.ts` (`guest accounts`) | same | |
 | Argon2id passwords, short-lived JWTs, rotating refresh tokens with reuse detection | done | `backend/src/auth/`; `auth.test.ts` | same | access tokens last 15 min |
-| Login and order rate limits in Redis | done | `auth.test.ts` (`rate limits login attempts`), `orders.test.ts` (`rate limits order entry per user`) | same | 10 logins/min per IP, 20 orders/s per user |
+| Rate limits in Redis, sized so a class behind one campus IP isn't locked out | done | `backend/src/app.ts`, `routes/auth.ts`; `auth.test.ts` (`rate limits password guesses per account`, `lets a whole class log in and refresh from one shared IP`, `counts signed-in API calls per user`), `orders.test.ts` (`rate limits order entry per user`) | same | 10 password guesses/min per account, 60 logins/min per IP, 300 API calls/min per user, 20 orders/s per user |
 | Zod validation on every input, parameterized SQL only | done | `backend/src/routes/*.ts`; `validates input` tests | same | |
 | Audit trail of logins, orders and cancels | done | `audit_log` table; `refresh_reuse` check in `auth.test.ts` | same | |
-| Integration tests against real Postgres and Redis | done | `backend/test/harness.ts`; `.github/workflows/backend.yml` | same | 65 tests |
+| Integration tests against real Postgres and Redis | done | `backend/test/harness.ts`; `.github/workflows/backend.yml` | same | 74 tests |
 | Redis pub/sub fan-out to WebSocket servers | done | `backend/src/ws/fanout.ts`; `backend/test/fanout.test.ts` (two gateways, a client on each gets every trade exactly once) | `cd backend && npx vitest run test/fanout.test.ts` | |
 | WebSocket delay with two gateways | done | [`docs/results/ws-delay-2026-11-06.json`](results/ws-delay-2026-11-06.json); `backend/scripts/ws-delay.ts` | `cd backend && npx tsx scripts/ws-delay.ts` | **p50 9 ms, p99 17 ms** (publishing gateway) and **p50 6 ms, p99 12 ms** (relay) to 500 clients, 250k messages each, no drops; one 4-vCPU VM with clients in the same process |
 | [X] ms p99 end-to-end under load (500 users + 50 bots) | planned (day 12) | | | |
@@ -70,8 +70,8 @@ Status: **done** = built and proven; **partial** = built, proof or number still 
 | Leagues with invite codes, custom dates and starting cash | done | `backend/src/routes/leagues.ts`; `leagues` tests | same | |
 | League rules: commissions, position limits, allowed order types, shorting on/off | done | `002_ledger.sql`, `checkOrder()`; `enforces the league's rules`, `charges commission on fills` | same | |
 | Live leaderboard by return, refreshed every second, in Redis sorted sets | done | `backend/src/leaderboard.ts`; `leaderboard` test | same | 1 s refresh |
-| Sharpe ratio leaderboard | done | `sharpeRatio()` in `leaderboard.ts` (checked against a hand calculation); `ranks ... by Sharpe` test | same | annualized from 1-minute equity snapshots, risk-free rate 0 |
-| Max drawdown, win rate, return chart | planned (day 10) | | | |
+| Sharpe ratio leaderboard | done | `sharpeRatio()` in `leaderboard.ts` (checked against a hand calculation); `ranks ... by Sharpe` test | same | annualized from 1-minute equity snapshots, risk-free rate 0, shown after 30 returns |
+| Portfolio analytics: equity curve, max drawdown, win rate, Sharpe | done | `backend/src/analytics.ts`, `GET /v1/positions/analytics`; `analytics.test.ts`, `ledger.test.ts` (`reports a portfolio's equity curve, drawdown and win rate`) | `cd backend && npx vitest run test/analytics.test.ts` | |
 | Assignments and grading | planned (day 11) | | | |
 
 ## Web app (Next.js)
@@ -82,8 +82,11 @@ Status: **done** = built and proven; **partial** = built, proof or number still 
 | Trade screen: TradingView Lightweight Charts, depth ladder with one-click trading, order ticket | done | `frontend/src/components/trade/`; `ladder.test.ts`, `ticket.test.ts` | same | |
 | Keyboard shortcuts (B buy, S sell, Esc cancel) | done | `TradeScreen.tsx` | `npm run dev`, open /trade | |
 | Light and dark themes | done | `frontend/src/styles/tokens.css`, `ThemeToggle.tsx` | same | |
-| Component tests, ESLint + Prettier in CI | done | `frontend/test/`; `.github/workflows/frontend.yml` | `npm test && npm run lint` | 19 tests |
+| Portfolio screen: equity curve against starting cash, drawdown, Sharpe, win rate, positions, fills | done | `frontend/src/components/portfolio/` | `npm run dev`, open /portfolio | |
+| Leagues screen: create a league with rules, join by code or invite link, live leaderboard by return or Sharpe | done | `frontend/src/components/leagues/`, `src/lib/league.ts`; `league.test.ts` | `npm test` | |
+| Trade inside any league from the trade screen | done | league picker in `AppHeader.tsx`; `useTrading.ts` sends `league` with each order | open /trade?league=ID | |
+| Component tests, ESLint + Prettier in CI | done | `frontend/test/`; `.github/workflows/frontend.yml` | `npm test && npm run lint` | 26 tests |
 
 ## Still to come
 
-Portfolio and League screens (day 10); roles, professor tools, assignments, bot API keys, Python starter kit and fair-play detection (day 11); Docker Compose, load test, Playwright, libFuzzer, CodeQL and the replay test (day 12). Rows get added here as each one lands. Cut on 2026-11-03 and not claimed: Google sign-in, 2FA, the AI coach, admin console, badges, notifications, News and Bot console screens, practice reset, market sessions, ETF arbitrage scenario, device/IP clustering, data export/delete, engine drop-copy, Under-the-hood and overload pages, ZAP, and AWS.
+Roles, professor tools, assignments, bot API keys, Python starter kit and fair-play detection (day 11); Docker Compose, load test, Playwright, libFuzzer, CodeQL and the replay test (day 12). Rows get added here as each one lands. Cut on 2026-11-03 and not claimed: Google sign-in, 2FA, the AI coach, admin console, badges, notifications, News and Bot console screens, practice reset, market sessions, ETF arbitrage scenario, device/IP clustering, data export/delete, engine drop-copy, Under-the-hood and overload pages, ZAP, and AWS.

@@ -1,14 +1,12 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { useSession } from "@/components/session/SessionProvider";
-import { Logo } from "@/components/ui/Logo";
+import { AppHeader } from "@/components/app/AppHeader";
 import { PriceCell } from "@/components/ui/PriceCell";
-import { ThemeToggle } from "@/components/ui/ThemeToggle";
-import type { NewOrder, Session, Side } from "@/lib/api";
-import { formatChange, formatMoney, formatPrice } from "@/lib/format";
+import { leagues, type League, type NewOrder, type Session, type Side } from "@/lib/api";
+import { formatChange, formatPrice } from "@/lib/format";
+import { queryParam } from "@/lib/query";
 import type { Ticket } from "@/lib/ticket";
 
 import { Blotter } from "./Blotter";
@@ -22,7 +20,6 @@ import { Watchlist } from "./Watchlist";
 const BAND = 0.1; // the engine's price band, 1000 bps either side of the last trade
 
 export function TradeScreen({ session }: { session: Session }) {
-  const { signOut } = useSession();
   const [symbol, setSymbol] = useState("NOVA");
   const [ticket, setTicket] = useState<Ticket>({
     side: "buy",
@@ -35,7 +32,25 @@ export function TradeScreen({ session }: { session: Session }) {
   });
   const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
   const qtyInput = useRef<HTMLInputElement>(null);
-  const t = useTrading(session.accessToken, symbol);
+  // Which league's portfolio to trade; /trade?league=ID opens straight into one.
+  const [league, setLeague] = useState<number | undefined>(
+    () => Number(queryParam("league")) || undefined,
+  );
+  const [leagueList, setLeagueList] = useState<League[]>([]);
+  const t = useTrading(session.accessToken, symbol, league);
+
+  useEffect(() => {
+    if (session.user.role === "guest") return; // guests only have the practice league
+    leagues.list(session.accessToken).then(setLeagueList, () => {});
+  }, [session]);
+
+  // Only running leagues can take orders.
+  const tradable = leagueList.filter(
+    (l) =>
+      !l.isPractice &&
+      new Date(l.startsAt) <= new Date() &&
+      (!l.endsAt || new Date(l.endsAt) > new Date()),
+  );
 
   const summary = t.symbols.find((s) => s.ticker === symbol);
   const last = summary?.last ?? 0;
@@ -102,41 +117,24 @@ export function TradeScreen({ session }: { session: Session }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [t, symbol]);
 
-  const guest = session.user.role === "guest";
   const equity = t.portfolio?.equity;
 
   return (
     <div className={styles.screen}>
-      <header className={styles.top}>
-        <Link href="/" aria-label="Ticker home">
-          <Logo />
-        </Link>
-        <nav aria-label="App" className={styles.nav}>
-          <Link href="/trade" aria-current="page">
-            Trade
-          </Link>
-        </nav>
-        <span className={`mono ${styles.conn}`} data-on={t.connected}>
-          <span aria-hidden="true" />
-          {t.connected ? "Live" : "Reconnecting"}
-        </span>
-        <span className={styles.grow} />
-        <div className={`mono ${styles.equity}`}>
-          <span className="label">Equity · practice</span>
-          <strong>{equity === undefined ? "—" : formatMoney(equity)}</strong>
-        </div>
-        <ThemeToggle />
-        <div className={styles.who}>
-          <span className="mono">{guest ? "Guest" : session.user.username}</span>
-          {guest ? (
-            <Link href="/login?mode=register">Save account</Link>
-          ) : (
-            <button type="button" onClick={signOut}>
-              Sign out
-            </button>
-          )}
-        </div>
-      </header>
+      <AppHeader
+        session={session}
+        equity={equity ?? null}
+        accounts={{
+          options: [
+            { id: undefined, name: "Practice" },
+            ...tradable.map((l) => ({ id: l.id, name: l.name })),
+          ],
+          value: league,
+          onChange: setLeague,
+        }}
+        connected={t.connected}
+        className={styles.top}
+      />
 
       <aside className={styles.watch}>
         <Watchlist symbols={t.symbols} active={symbol} onPick={pick} />

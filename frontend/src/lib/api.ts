@@ -136,8 +136,58 @@ export interface Portfolio {
   positions: Position[];
 }
 
+export interface Analytics {
+  league: number;
+  startingCash: number;
+  equity: number;
+  returnPct: number;
+  maxDrawdown: number; // 0.12 = fell 12% from a peak
+  sharpe: number | null;
+  winRate: number | null;
+  roundTrips: number;
+  wins: number;
+  history: { at: number; equity: number }[];
+}
+
+export interface League {
+  id: number;
+  name: string;
+  isPractice: boolean;
+  startsAt: string;
+  endsAt: string | null;
+  startingCash: number;
+  commissionCents: number;
+  commissionBps: number;
+  maxPosition: number | null;
+  allowShort: boolean;
+  marginBps: number;
+  allowedTypes: OrderType[];
+  members: number;
+  isOwner: boolean;
+  inviteCode?: string; // only for the owner
+}
+
+export interface NewLeague {
+  name: string;
+  startingCash: number;
+  endsAt?: string;
+  commissionCents: number;
+  allowShort: boolean;
+  maxPosition: number | null;
+}
+
+export interface Standing {
+  rank: number;
+  portfolioId: number;
+  username: string;
+  equity: number;
+  returnPct: number;
+  sharpe: number | null;
+}
+
 export interface NewOrder {
   symbol: string;
+  league?: number; // the practice league when left out
   side: Side;
   type: OrderType;
   qty: number;
@@ -188,8 +238,27 @@ export const auth = {
   logout: () => call<void>("/v1/auth/logout", { method: "POST" }),
 };
 
+const leagueParam = (league?: number) => (league ? `?league=${league}` : "");
+
 export const me = {
-  portfolio: (token: string) => call<Portfolio>("/v1/positions", { token }),
-  openOrders: (token: string) => call<Order[]>("/v1/orders?open=true&limit=100", { token }),
-  fills: (token: string) => call<Fill[]>("/v1/fills?limit=50", { token }),
+  portfolio: (token: string, league?: number) =>
+    call<Portfolio>(`/v1/positions${leagueParam(league)}`, { token }),
+  analytics: (token: string, league?: number) =>
+    call<Analytics>(`/v1/positions/analytics${leagueParam(league)}`, { token }),
+  openOrders: (token: string, league?: number) =>
+    call<Order[]>(`/v1/orders?open=true&limit=100${league ? `&league=${league}` : ""}`, {
+      token,
+    }),
+  fills: (token: string, league?: number) =>
+    call<Fill[]>(`/v1/fills?limit=50${league ? `&league=${league}` : ""}`, { token }),
+};
+
+export const leagues = {
+  list: (token: string) => call<League[]>("/v1/leagues", { token }),
+  create: (token: string, body: NewLeague) =>
+    call<League>("/v1/leagues", { method: "POST", token, body: JSON.stringify(body) }),
+  join: (token: string, code: string) =>
+    call<League>("/v1/leagues/join", { method: "POST", token, body: JSON.stringify({ code }) }),
+  leaderboard: (token: string, id: number, by: "return" | "sharpe") =>
+    call<Standing[]>(`/v1/leagues/${id}/leaderboard?by=${by}&limit=100`, { token }),
 };

@@ -1,0 +1,350 @@
+.guest {
+  max-width: 420px;
+  margin: 0;
+  color: var(--text-2);
+  line-height: 1.5;
+}
+
+.guest a {
+  color: var(--you);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--s-4);
+}
+
+.join {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  gap: var(--s-2);
+}
+
+.join label,
+.fields label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.join input,
+.fields input:not([type="checkbox"]) {
+  min-height: 44px;
+  padding: 0 var(--s-3);
+  border: 1px solid var(--line-strong);
+  border-radius: 0;
+  background: var(--ink-0);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+}
+
+.join input {
+  width: 150px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.join input:focus,
+.fields input:focus {
+  outline: none;
+  border-color: var(--you);
+}
+
+.join input[aria-invalid="true"] {
+  border-color: var(--down);
+}
+
+.fieldError {
+  color: var(--down);
+  font-size: 11px;
+}
+
+.join .fieldError {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 4px;
+}
+
+/* List of your leagues on the left, the chosen one on the right. */
+.layout {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  gap: var(--s-6);
+  align-items: start;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+}
+
+.item {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px var(--s-2);
+  padding: var(--s-3) var(--s-4);
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-left: 2px solid transparent;
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--t-fast);
+}
+
+.item:last-child {
+  border-bottom: 0;
+}
+
+.item:hover {
+  background: var(--ink-2);
+}
+
+.item[aria-current="true"] {
+  border-left-color: var(--you);
+  background: color-mix(in srgb, var(--you) 7%, transparent);
+}
+
+.item > * {
+  grid-column: 1;
+}
+
+.item > .owner {
+  grid-column: 2;
+  grid-row: 1;
+  align-self: start;
+}
+
+.itemName {
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.detail {
+  gap: 0;
+}
+
+.detailHead {
+  align-items: flex-end !important;
+  padding: var(--s-4) var(--s-6) !important;
+}
+
+.detailHead h2 {
+  margin: 0 0 6px;
+  font-family: var(--font-display);
+  font-size: 24px;
+  font-weight: 600;
+}
+
+.detailHead span {
+  color: var(--text-3);
+}
+
+.links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-4);
+}
+
+.mine {
+  color: var(--you);
+  font-size: 13px;
+  text-decoration: none;
+}
+
+.mine:hover {
+  text-decoration: underline;
+}
+
+.rules {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+  margin: 0;
+  padding: var(--s-4) var(--s-6);
+  list-style: none;
+  border-bottom: 1px solid var(--line);
+}
+
+.rules li {
+  padding: 4px 10px;
+  border: 1px solid var(--line-strong);
+  color: var(--text-2);
+  font-size: 11px;
+}
+
+.invite {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-3);
+  padding: var(--s-4) var(--s-6);
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--you) 5%, transparent);
+}
+
+.invite code {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  padding: 10px var(--s-3);
+  border: 1px dashed color-mix(in srgb, var(--you) 55%, transparent);
+  color: var(--text);
+  font-size: 12px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.code {
+  color: var(--text-3);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+}
+
+.boardHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--s-4) var(--s-6) var(--s-2);
+}
+
+.toggle {
+  display: inline-grid;
+  grid-auto-flow: column;
+  border: 1px solid var(--line-strong);
+}
+
+.toggle button {
+  min-height: 32px;
+  padding: 0 var(--s-4);
+  border: 0;
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.toggle button[aria-selected="true"] {
+  background: var(--text);
+  color: var(--ink-0);
+}
+
+.rank {
+  width: 40px;
+  color: var(--text-3);
+}
+
+.left {
+  text-align: left !important;
+}
+
+.detail tr[data-you] td {
+  background: color-mix(in srgb, var(--you) 9%, transparent);
+}
+
+.detail tr[data-you] td:first-child {
+  box-shadow: inset 2px 0 0 var(--you);
+  color: var(--you);
+}
+
+.create footer,
+.createFoot {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: var(--s-4);
+  padding: var(--s-4) var(--s-6);
+  border-top: 1px solid var(--line);
+}
+
+.fields {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--s-4) var(--s-6);
+  padding: var(--s-6);
+}
+
+.wide {
+  grid-column: span 2;
+}
+
+.check {
+  flex-direction: row !important;
+  align-items: center;
+  gap: var(--s-2) !important;
+  align-self: end;
+  min-height: 44px;
+  color: var(--text-2);
+  font-size: 14px;
+}
+
+.check input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--you);
+}
+
+@media (max-width: 1000px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+
+  .fields {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 600px) {
+  .fields {
+    grid-template-columns: 1fr;
+  }
+
+  .wide {
+    grid-column: auto;
+  }
+
+  .actions,
+  .join {
+    width: 100%;
+  }
+
+  .join label {
+    flex: 1;
+  }
+
+  .join input {
+    width: 100%;
+  }
+
+  .invite code {
+    flex-basis: 100%;
+    order: 2;
+  }
+
+  .invite > :global(.label) {
+    flex-basis: 100%;
+  }
+
+  .invite > :not(code, :global(.label)) {
+    order: 3;
+  }
+
+  .detailHead,
+  .rules,
+  .invite,
+  .boardHead {
+    padding-left: var(--s-4) !important;
+    padding-right: var(--s-4) !important;
+  }
+}

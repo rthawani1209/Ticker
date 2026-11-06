@@ -1,0 +1,141 @@
+.switch {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.switch select {
+  min-width: 220px;
+  padding: 9px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 0;
+  background: var(--ink-1);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+}
+
+/* Five readouts in a row; the first (equity) is wider and larger. */
+.stats {
+  display: grid;
+  grid-template-columns: 1.6fr repeat(4, 1fr);
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--ink-1) 92%, transparent);
+}
+
+.stat {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: var(--s-4) var(--s-6);
+  border-left: 1px solid var(--line);
+}
+
+.stat:first-child {
+  border-left: 0;
+}
+
+.stat strong {
+  font-size: 24px;
+  font-weight: 500;
+  line-height: 1.1;
+}
+
+.stat[data-big="true"] strong {
+  font-family: var(--font-display);
+  font-size: 34px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.stat strong[data-direction="up"] {
+  color: var(--up);
+}
+
+.stat strong[data-direction="down"] {
+  color: var(--down);
+}
+
+.note {
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+.skeleton {
+  display: inline-block;
+  width: 80%;
+  max-width: 140px;
+  height: 0.9em;
+  background: linear-gradient(90deg, var(--ink-2), var(--line), var(--ink-2));
+  background-size: 200% 100%;
+  animation: shimmer 1.2s linear infinite;
+}
+
+@keyframes shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+
+.curve {
+  height: 340px;
+}
+
+.curve > div {
+  flex: 1;
+}
+
+.split {
+  display: grid;
+  grid-template-columns: 3fr 2fr;
+  gap: var(--s-6);
+  align-items: start;
+}
+
+/* Share of gross holdings, as a thin amber bar. */
+.weight {
+  width: 90px;
+}
+
+.weight span {
+  display: block;
+  height: 4px;
+  margin-left: auto;
+  background: var(--you);
+}
+
+@media (max-width: 1000px) {
+  .hint {
+    display: none;
+  }
+
+  .stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .stat:first-child {
+    grid-column: 1 / -1;
+  }
+
+  .stat {
+    border-left: 0;
+    border-top: 1px solid var(--line);
+  }
+
+  .stat:first-child {
+    border-top: 0;
+  }
+
+  .stat:nth-child(odd):not(:first-child) {
+    border-left: 1px solid var(--line);
+  }
+
+  .split {
+    grid-template-columns: 1fr;
+  }
+
+  .curve {
+    height: 280px;
+  }
+}

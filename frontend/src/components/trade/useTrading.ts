@@ -32,7 +32,7 @@ export interface Reply {
 // Everything the trade screen shows, kept live. Market data and order entry share one
 // WebSocket; your portfolio, open orders and fills reload from REST whenever one of
 // your orders changes.
-export function useTrading(token: string, symbol: string) {
+export function useTrading(token: string, symbol: string, league?: number) {
   const [connected, setConnected] = useState(false);
   const [symbols, setSymbols] = useState<SymbolSummary[]>([]);
   const [book, setBook] = useState<Depth>(EMPTY);
@@ -50,7 +50,11 @@ export function useTrading(token: string, symbol: string) {
   const nextRef = useRef(0);
 
   const reloadMine = useCallback(() => {
-    Promise.all([me.portfolio(token), me.openOrders(token), me.fills(token)]).then(
+    Promise.all([
+      me.portfolio(token, league),
+      me.openOrders(token, league),
+      me.fills(token, league),
+    ]).then(
       ([p, o, f]) => {
         setPortfolio(p);
         setOrders(o);
@@ -58,7 +62,7 @@ export function useTrading(token: string, symbol: string) {
       },
       () => {},
     );
-  }, [token]);
+  }, [token, league]);
 
   // Watchlist rows and your portfolio marks: a light poll is plenty.
   useEffect(() => {
@@ -162,7 +166,11 @@ export function useTrading(token: string, symbol: string) {
     });
   }, []);
 
-  const placeOrder = useCallback((order: NewOrder) => request({ op: "order", order }), [request]);
+  // Orders go to the league being traded; the practice league when none is picked.
+  const placeOrder = useCallback(
+    (order: NewOrder) => request({ op: "order", order: league ? { ...order, league } : order }),
+    [request, league],
+  );
   const cancelOrder = useCallback((id: number) => request({ op: "cancel", id }), [request]);
 
   return {

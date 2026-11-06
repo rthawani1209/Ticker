@@ -12,91 +12,6 @@
 
 .top {
   grid-area: top;
-  display: flex;
-  align-items: center;
-  gap: 22px;
-  padding: 0 var(--s-4);
-  border-bottom: 1px solid var(--line);
-  background: color-mix(in srgb, var(--ink-0) 92%, transparent);
-}
-
-.top a {
-  text-decoration: none;
-}
-
-.nav {
-  display: flex;
-  align-self: stretch;
-}
-
-.nav a {
-  display: flex;
-  align-items: center;
-  padding: 0 4px;
-  color: var(--text-2);
-  border-bottom: 2px solid transparent;
-}
-
-.nav a[aria-current="page"] {
-  color: var(--text);
-  border-bottom-color: var(--you);
-}
-
-.conn {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 11px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--text-3);
-}
-
-.conn span {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--text-3);
-}
-
-.conn[data-on="true"] span {
-  background: var(--up);
-  box-shadow: 0 0 8px var(--up);
-}
-
-.grow {
-  flex: 1;
-}
-
-.equity {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 2px;
-}
-
-.equity strong {
-  font-size: 16px;
-  font-weight: 500;
-}
-
-.who {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 2px;
-  font-size: 13px;
-}
-
-.who a,
-.who button {
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--you);
-  font: inherit;
-  font-size: 12px;
-  cursor: pointer;
 }
 
 .watch {
@@ -232,20 +147,6 @@
     display: flex;
     flex-direction: column;
     height: auto;
-  }
-
-  .top {
-    position: sticky;
-    top: 0;
-    z-index: 5;
-    min-height: 60px;
-    gap: var(--s-3);
-  }
-
-  .nav,
-  .conn,
-  .who {
-    display: none;
   }
 
   .watch {

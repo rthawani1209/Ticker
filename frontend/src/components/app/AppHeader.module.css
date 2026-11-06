@@ -1,0 +1,147 @@
+.top {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  height: 60px;
+  padding: 0 var(--s-4);
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--ink-0) 92%, transparent);
+}
+
+.top a {
+  text-decoration: none;
+}
+
+.nav {
+  display: flex;
+  gap: 18px;
+  align-self: stretch;
+}
+
+.nav a {
+  display: flex;
+  align-items: center;
+  padding: 0 4px;
+  color: var(--text-2);
+  border-bottom: 2px solid transparent;
+  transition: color var(--t-fast);
+}
+
+.nav a:hover {
+  color: var(--text);
+}
+
+.nav a[aria-current="page"] {
+  color: var(--text);
+  border-bottom-color: var(--you);
+}
+
+.conn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.conn span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-3);
+}
+
+.conn[data-on="true"] span {
+  background: var(--up);
+  box-shadow: 0 0 8px var(--up);
+}
+
+.grow {
+  flex: 1;
+}
+
+.equity {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.account {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.account select {
+  max-width: 180px;
+  padding: 0 14px 0 0;
+  border: 0;
+  background: transparent linear-gradient(45deg, transparent 50%, var(--you) 50%) right 3px center /
+    5px 5px no-repeat;
+  color: var(--you);
+  cursor: pointer;
+  appearance: none;
+}
+
+.account select option {
+  background: var(--ink-1);
+  color: var(--text);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.equity strong {
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.who {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  font-size: 13px;
+}
+
+.who a,
+.who button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--you);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+/* Phones: the nav drops to its own scrolling row under the logo bar. */
+@media (max-width: 1000px) {
+  .top {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    flex-wrap: wrap;
+    height: auto;
+    gap: var(--s-3);
+    padding-top: 10px;
+  }
+
+  .nav {
+    order: 10;
+    width: 100%;
+    overflow-x: auto;
+    border-top: 1px solid var(--line);
+  }
+
+  .nav a {
+    padding: 10px 4px;
+  }
+
+  .conn,
+  .who {
+    display: none;
+  }
+}

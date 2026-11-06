@@ -1,0 +1,166 @@
+/* Shared layout for the signed-in screens that aren't the trade terminal. */
+.page {
+  min-height: 100dvh;
+}
+
+.body {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: var(--s-8) var(--s-6) var(--s-12);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-6);
+}
+
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--s-4);
+}
+
+.head h1 {
+  margin: 6px 0 0;
+  font-family: var(--font-display);
+  font-size: 36px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.02em;
+}
+
+/* Hairline panel with the Signal corner brackets. */
+.panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--ink-1) 92%, transparent);
+}
+
+.panel::before,
+.panel::after {
+  content: "";
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border: 0 solid var(--bracket);
+  pointer-events: none;
+}
+
+.panel::before {
+  top: -1px;
+  left: -1px;
+  border-width: 1px 0 0 1px;
+}
+
+.panel::after {
+  right: -1px;
+  bottom: -1px;
+  border-width: 0 1px 1px 0;
+}
+
+.panel > header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--s-3);
+  min-height: 44px;
+  padding: var(--s-2) var(--s-4);
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+}
+
+.scroll {
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.table th,
+.table td {
+  padding: 9px var(--s-4);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.table th:first-child,
+.table td:first-child {
+  text-align: left;
+}
+
+.table th {
+  font-weight: 400;
+  border-bottom: 1px solid var(--line);
+}
+
+.table td {
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
+}
+
+.table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.table [data-direction="up"] {
+  color: var(--up);
+}
+
+.table [data-direction="down"] {
+  color: var(--down);
+}
+
+.side {
+  text-transform: uppercase;
+}
+
+.side[data-side="buy"] {
+  color: var(--up);
+}
+
+.side[data-side="sell"] {
+  color: var(--down);
+}
+
+.tag {
+  margin-left: 6px;
+  padding: 1px 5px;
+  border: 1px solid var(--line-strong);
+  font-size: 10px;
+  color: var(--text-2);
+  text-transform: uppercase;
+}
+
+.empty {
+  margin: 0;
+  padding: var(--s-8) var(--s-4);
+  color: var(--text-3);
+  text-align: center;
+}
+
+.empty a {
+  color: var(--you);
+}
+
+.error {
+  margin: 0;
+  padding: var(--s-3) var(--s-4);
+  border: 1px solid color-mix(in srgb, var(--down) 50%, transparent);
+  color: var(--down);
+  font-size: 12px;
+}
+
+@media (max-width: 700px) {
+  .body {
+    padding: var(--s-6) var(--s-4) var(--s-12);
+  }
+
+  .head h1 {
+    font-size: 28px;
+  }
+}
