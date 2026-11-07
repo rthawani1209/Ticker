@@ -1,5 +1,6 @@
 import { Redis } from "ioredis";
 
+import { ApiKeys } from "./auth/api-keys.js";
 import { buildApp } from "./app.js";
 import { Tokens } from "./auth/tokens.js";
 import { loadConfig } from "./config.js";
@@ -40,6 +41,7 @@ const app = await buildApp(
     db,
     redis,
     fanout,
+    apiKeys: new ApiKeys(db),
     bridge,
     orders,
     leaderboard,

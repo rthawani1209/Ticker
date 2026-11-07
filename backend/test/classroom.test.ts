@@ -73,6 +73,10 @@ describe("roles", () => {
     "GET /v1/classes/:id/grades.csv": "professor",
     "GET /v1/admin/users": "admin",
     "PATCH /v1/admin/users/:id": "admin",
+    "PUT /v1/admin/bots": "admin",
+    "GET /v1/keys": "account",
+    "POST /v1/keys": "account",
+    "DELETE /v1/keys/:id": "account",
   };
 
   it("lists every route", () => {
@@ -105,6 +109,8 @@ describe("roles", () => {
         dueAt: new Date(Date.now() + 86_400_000).toISOString(),
       },
       "PATCH /v1/admin/users/:id": { role: "student" },
+      "PUT /v1/admin/bots": { enabled: true },
+      "POST /v1/keys": { name: "rbac bot" },
       "POST /v1/leagues": { name: "Another league" },
       "POST /v1/leagues/join": { code: league.inviteCode },
     };

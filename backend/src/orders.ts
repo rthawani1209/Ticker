@@ -143,7 +143,12 @@ export class OrderService extends EventEmitter {
   }
 
   // Places an order in one of the user's leagues (the practice league by default).
-  async place(userId: number, input: OrderInput, leagueId?: number): Promise<Order> {
+  async place(
+    userId: number,
+    input: OrderInput,
+    leagueId?: number,
+    apiKeyId?: number,
+  ): Promise<Order> {
     if (!this.bridge.connected)
       throw new ApiError(503, "exchange_down", "the exchange is not connected");
     let id = 0;
@@ -167,7 +172,7 @@ export class OrderService extends EventEmitter {
         input,
         this.marks,
       );
-      id = await insertOrder(client, userId, row.portfolio_id, input);
+      id = await insertOrder(client, userId, row.portfolio_id, input, null, apiKeyId ?? null);
       account = row.portfolio_id;
     });
     return this.send(userId, id, account, input);
@@ -340,6 +345,27 @@ export class OrderService extends EventEmitter {
         );
       }
     }
+  }
+
+  // Pulls every working order sent with one API key (or with any key), for revoking a
+  // key and for the admin kill switch. Returns how many it cancelled.
+  async cancelBotOrders(apiKeyId?: number): Promise<number> {
+    const { rows } = await this.db.query(
+      `SELECT id, user_id FROM orders
+       WHERE api_key_id IS NOT NULL AND ($1::bigint IS NULL OR api_key_id = $1)
+         AND status IN ('pending', 'open', 'partially_filled')`,
+      [apiKeyId ?? null],
+    );
+    let n = 0;
+    for (const r of rows) {
+      try {
+        await this.cancel(r.user_id, r.id);
+        n++;
+      } catch {
+        // already done or the exchange is down; the next sweep or the engine's reject covers it
+      }
+    }
+    return n;
   }
 
   async cancel(userId: number, orderId: number): Promise<Order> {
@@ -597,11 +623,12 @@ async function insertOrder(
   portfolioId: number,
   input: OrderInput,
   parentId: number | null = null,
+  apiKeyId: number | null = null,
 ): Promise<number> {
   const { rows } = await client.query(
     `INSERT INTO orders (user_id, portfolio_id, symbol_id, side, type, tif, price, stop_price, qty, leaves,
-       take_profit, stop_loss, parent_id)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9, $10, $11, $12) RETURNING id`,
+       take_profit, stop_loss, parent_id, api_key_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9, $10, $11, $12, $13) RETURNING id`,
     [
       userId,
       portfolioId,
@@ -615,6 +642,7 @@ async function insertOrder(
       input.takeProfit ?? null,
       input.stopLoss ?? null,
       parentId,
+      apiKeyId,
     ],
   );
   return rows[0].id;

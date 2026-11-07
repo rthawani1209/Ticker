@@ -9,6 +9,7 @@ import { Redis } from "ioredis";
 import WebSocket from "ws";
 
 import { buildApp } from "../src/app.js";
+import { ApiKeys } from "../src/auth/api-keys.js";
 import { Tokens } from "../src/auth/tokens.js";
 import { loadConfig } from "../src/config.js";
 import { migrate } from "../src/db/migrate.js";
@@ -88,6 +89,7 @@ export async function startBackend() {
     db,
     redis,
     fanout,
+    apiKeys: new ApiKeys(db),
     bridge,
     orders,
     leaderboard,

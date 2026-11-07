@@ -1,6 +1,8 @@
 // Admin tools: find users and change their role (the only way to make a professor).
 //   GET   /v1/admin/users?q=name
 //   PATCH /v1/admin/users/:id  {"role": "professor"}
+//   PUT   /v1/admin/bots       {"enabled": false}  the kill switch: every API key stops
+//                                                 working and their orders are cancelled
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 
@@ -9,7 +11,7 @@ import { requireRole } from "../auth/roles.js";
 import { ApiError } from "../errors.js";
 
 export default async function adminRoutes(app: FastifyInstance) {
-  const { db } = app.deps;
+  const { db, apiKeys, orders } = app.deps;
   app.addHook("preHandler", app.authenticate);
   app.addHook("preHandler", requireRole(db, "admin"));
 
@@ -41,5 +43,16 @@ export default async function adminRoutes(app: FastifyInstance) {
     if (!rows[0]) throw new ApiError(404, "not_found", "no such user (guests can't get roles)");
     await audit(db, req.user.userId, "role_change", { userId: id, role }, req.ip);
     return rows[0];
+  });
+
+  app.put("/bots", async (req) => {
+    const { enabled } = z.object({ enabled: z.boolean() }).parse(req.body);
+    await db.query("UPDATE settings SET value = $1 WHERE key = 'bots_enabled'", [
+      JSON.stringify(enabled),
+    ]);
+    apiKeys.forgetEnabled();
+    const cancelled = enabled ? 0 : await orders.cancelBotOrders();
+    await audit(db, req.user.userId, "bots_switch", { enabled, cancelled }, req.ip);
+    return { enabled, cancelled };
   });
 }

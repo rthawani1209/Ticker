@@ -3,6 +3,8 @@ import { decodeJwt } from "jose";
 import { z } from "zod";
 
 import { audit } from "../audit.js";
+import { keyPrefix } from "../auth/api-keys.js";
+import { ApiError } from "../errors.js";
 import { NewOrder, toOrderInput } from "../order-schema.js";
 
 const Id = z.object({ id: z.coerce.number().int().positive() });
@@ -20,11 +22,38 @@ export default async function orderRoutes(app: FastifyInstance) {
   // Per-user limit on order entry. Rate limiting runs before authentication, so the key
   // comes from the token's unverified subject; a forged token is rejected right after anyway.
   const orderLimit = { rateLimit: { max: 20, timeWindow: 1000, keyGenerator: userKey } };
+  // Each API key has its own, lower orders-per-second limit set when it was made.
+  const perKey = app.createRateLimit({
+    timeWindow: 1000,
+    max: (req) => req.user.apiKey?.ordersPerSecond ?? 20,
+    keyGenerator: (req) => `apikey:${req.user.apiKey?.id}`,
+  });
 
   app.post("/", { config: orderLimit }, async (req, reply) => {
     const body = NewOrder.parse(req.body);
     const { input, league } = toOrderInput(body, symbolsByTicker);
-    const order = await orders.place(req.user.userId, input, league);
+    const key = req.user.apiKey;
+    let leagueId = league;
+    if (key) {
+      const limit = await perKey(req);
+      if (!limit.isAllowed && limit.isExceeded)
+        throw new ApiError(
+          429,
+          "rate_limited",
+          `this key allows ${key.ordersPerSecond} orders a second`,
+        );
+      if (body.qty > key.maxOrderQty)
+        throw new ApiError(
+          422,
+          "size_cap",
+          `this key can send at most ${key.maxOrderQty} shares an order`,
+        );
+      // A key trades in the league it was made for.
+      if (league !== undefined && league !== (key.leagueId ?? undefined))
+        throw new ApiError(403, "wrong_league", "this key trades in a different league");
+      leagueId = key.leagueId ?? undefined;
+    }
+    const order = await orders.place(req.user.userId, input, leagueId, key?.id);
     await audit(
       db,
       req.user.userId,
@@ -35,6 +64,7 @@ export default async function orderRoutes(app: FastifyInstance) {
         symbol: order.symbol,
         side: body.side,
         qty: body.qty,
+        ...(key ? { apiKey: key.id } : {}),
       },
       req.ip,
     );
@@ -80,6 +110,7 @@ export async function fillRoutes(app: FastifyInstance) {
 
 function userKey(req: FastifyRequest): string {
   const header = req.headers.authorization;
+  if (header?.startsWith("Bearer tk_")) return `k${keyPrefix(header.slice(7)) ?? req.ip}`;
   if (header?.startsWith("Bearer ")) {
     try {
       const sub = decodeJwt(header.slice(7)).sub;

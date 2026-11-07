@@ -13,6 +13,7 @@ export type Role = "guest" | "student" | "professor" | "admin";
 export interface AccessClaims {
   userId: number;
   role: Role;
+  apiKey?: import("./api-keys.js").KeyLimits; // set when a bot authenticated with an API key
 }
 
 export class Tokens {
