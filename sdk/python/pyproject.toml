@@ -1,0 +1,13 @@
+[project]
+name = "ticker-sdk"
+version = "0.1.0"
+description = "Python starter kit for writing trading bots against the Ticker exchange"
+requires-python = ">=3.10"
+dependencies = []  # standard library only, so it runs anywhere
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

@@ -67,6 +67,13 @@ The engine only knows accounts and orders. Money lives in the ledger (`backend/s
 - **Professor tools** (`/v1/classes/:id/...`) work on leagues the professor owns (admins: any league): roster, every fill with paging, trades and grades as CSV. The owner is the teacher, so they're left out of the roster and grades.
 - **Assignments** have a goal (return at least X%, at least N trades, max drawdown under X%, or fill a given order type) and a due date. Grades are computed when asked, from fills and equity snapshots up to the due date, so they update live and freeze once it passes. No grade table to keep in sync.
 
+## Bots
+
+- **API keys** look like `tk_<10 hex>_<secret>`. Only the SHA-256 of the secret is stored, compared in constant time, so a database leak doesn't leak keys. The prefix is shown in the app so people can tell keys apart.
+- A key acts as its owner but only on `/v1/orders`, `/v1/fills`, `/v1/positions` and `/v1/me`, only in the league it was made for, with its own order size cap and orders-per-second limit (counted in Redis by key, separate from the owner's own limit). Orders record which key placed them.
+- Revoking a key cancels its working orders. Admins have a kill switch (`PUT /v1/admin/bots`) that refuses every key with a 503 and cancels all bot orders; the switch is cached for one second.
+- Bots use REST only; the WebSocket feed still needs a signed-in session. The starter kit in `sdk/python` polls quotes, which is plenty at 1-20 orders a second.
+
 ## The market simulator
 
 Each company has a hidden "true value" that drifts randomly and jumps when news comes out. Market makers quote around a lagged estimate of it. News traders react to headlines within a few seconds. Momentum traders chase trends and protect themselves with stop orders. Noise traders add random flow. Scenario files script events like a fraud allegation that triggers a crash and trips the circuit breaker.

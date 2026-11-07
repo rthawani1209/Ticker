@@ -15,6 +15,7 @@ const LINKS = [
   { href: "/trade", label: "Trade" },
   { href: "/portfolio", label: "Portfolio" },
   { href: "/leagues", label: "Leagues" },
+  { href: "/bots", label: "Bots" },
 ] as const;
 
 export interface AccountPicker {

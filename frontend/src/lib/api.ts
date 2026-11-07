@@ -335,3 +335,35 @@ export const classroom = {
     URL.revokeObjectURL(url);
   },
 };
+
+// ---- bot API keys ----
+
+export interface ApiKey {
+  id: number;
+  name: string;
+  prefix: string;
+  league: number | null;
+  maxOrderQty: number;
+  ordersPerSecond: number;
+  createdAt: string;
+  lastUsedAt: string | null;
+}
+
+export interface NewApiKey {
+  name: string;
+  league?: number;
+  maxOrderQty: number;
+  ordersPerSecond: number;
+}
+
+export const apiKeys = {
+  list: (token: string) => call<ApiKey[]>("/v1/keys", { token }),
+  create: (token: string, body: NewApiKey) =>
+    call<ApiKey & { key: string }>("/v1/keys", {
+      method: "POST",
+      token,
+      body: JSON.stringify(body),
+    }),
+  revoke: (token: string, id: number) =>
+    call<{ revoked: number; cancelled: number }>(`/v1/keys/${id}`, { method: "DELETE", token }),
+};

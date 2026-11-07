@@ -1,0 +1,26 @@
+name: sdk
+
+on:
+  push:
+    branches: [main]
+    paths: ["sdk/**", ".github/workflows/sdk.yml"]
+  pull_request:
+    paths: ["sdk/**", ".github/workflows/sdk.yml"]
+
+jobs:
+  python:
+    name: python sdk (${{ matrix.python }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    strategy:
+      matrix:
+        python: ["3.10", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: pip install pytest
+      - name: Test
+        working-directory: sdk/python
+        run: python -m pytest -v

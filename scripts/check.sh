@@ -29,6 +29,9 @@ echo "== market-sim"
 (cd market-sim && TICKER_ENGINE=../engine/build-check/g++-release/ticker-engine \
   python3 -m pytest -q > ../engine/build-check/pytest.log 2>&1) || { tail -50 engine/build-check/pytest.log; exit 1; }
 
+echo "== python sdk"
+(cd sdk/python && python3 -m pytest -q > ../../engine/build-check/sdk.log 2>&1) || { tail -50 engine/build-check/sdk.log; exit 1; }
+
 echo "== backend"
 # Needs Postgres (ticker/ticker, database ticker_test) and Redis on localhost, like CI.
 (

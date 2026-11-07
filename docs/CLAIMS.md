@@ -53,7 +53,7 @@ Status: **done** = built and proven; **partial** = built, proof or number still 
 | Rate limits in Redis, sized so a class behind one campus IP isn't locked out | done | `backend/src/app.ts`, `routes/auth.ts`; `auth.test.ts` (`rate limits password guesses per account`, `lets a whole class log in and refresh from one shared IP`, `counts signed-in API calls per user`), `orders.test.ts` (`rate limits order entry per user`) | same | 10 password guesses/min per account, 60 logins/min per IP, 300 API calls/min per user, 20 orders/s per user |
 | Zod validation on every input, parameterized SQL only | done | `backend/src/routes/*.ts`; `validates input` tests | same | |
 | Audit trail of logins, orders and cancels | done | `audit_log` table; `refresh_reuse` check in `auth.test.ts` | same | |
-| Integration tests against real Postgres and Redis | done | `backend/test/harness.ts`; `.github/workflows/backend.yml` | same | 81 tests |
+| Integration tests against real Postgres and Redis | done | `backend/test/harness.ts`; `.github/workflows/backend.yml` | same | 87 tests |
 | Redis pub/sub fan-out to WebSocket servers | done | `backend/src/ws/fanout.ts`; `backend/test/fanout.test.ts` (two gateways, a client on each gets every trade exactly once) | `cd backend && npx vitest run test/fanout.test.ts` | |
 | WebSocket delay with two gateways | done | [`docs/results/ws-delay-2026-11-06.json`](results/ws-delay-2026-11-06.json); `backend/scripts/ws-delay.ts` | `cd backend && npx tsx scripts/ws-delay.ts` | **p50 9 ms, p99 17 ms** (publishing gateway) and **p50 6 ms, p99 12 ms** (relay) to 500 clients, 250k messages each, no drops; one 4-vCPU VM with clients in the same process |
 | [X] ms p99 end-to-end under load (500 users + 50 bots) | planned (day 12) | | | |
@@ -74,6 +74,8 @@ Status: **done** = built and proven; **partial** = built, proof or number still 
 | Portfolio analytics: equity curve, max drawdown, win rate, Sharpe | done | `backend/src/analytics.ts`, `GET /v1/positions/analytics`; `analytics.test.ts`, `ledger.test.ts` (`reports a portfolio's equity curve, drawdown and win rate`) | `cd backend && npx vitest run test/analytics.test.ts` | |
 | Student, professor and admin roles, checked on every route | done | `backend/src/auth/roles.ts`; `classroom.test.ts` (`lists every route`, `lets each role call exactly the routes it should`: every route x 5 callers) | `cd backend && npx vitest run test/classroom.test.ts` | 36 routes; a role removed takes effect on the next request |
 | Professor dashboard: roster, every trade, CSV export | done | `backend/src/routes/classroom.ts`, `frontend/src/components/leagues/ClassTools.tsx`; `classroom.test.ts` | same | CSV cells that look like formulas are defused |
+| API keys for trading bots, each locked to one league with its own size cap and rate limit | done | `backend/src/auth/api-keys.ts`, `routes/keys.ts`; `keys.test.ts` (`shows the secret once and trades in the key's league`, `enforces the size cap and the per-key rate`, `rejects bad keys, guests and a sixth key`) | `cd backend && npx vitest run test/keys.test.ts` | secret stored as SHA-256 only; keys reach 4 routes (orders, fills, positions, me) and nothing else; at most 5 per person |
+| Revoking a key or the admin kill switch pulls the bots' working orders | done | `cancelBotOrders()` in `orders.ts`, `PUT /v1/admin/bots`; `keys.test.ts` (`revoking a key cancels its orders...`, `the admin kill switch stops every bot...`) | same | |
 | Auto-graded assignments | done | `backend/src/grading.ts`; `classroom.test.ts` (`grades assignments`) | same | 4 goal types, graded live until the due date, then frozen at it |
 
 ## Web app (Next.js)
@@ -87,8 +89,16 @@ Status: **done** = built and proven; **partial** = built, proof or number still 
 | Portfolio screen: equity curve against starting cash, drawdown, Sharpe, win rate, positions, fills | done | `frontend/src/components/portfolio/` | `npm run dev`, open /portfolio | |
 | Leagues screen: create a league with rules, join by code or invite link, live leaderboard by return or Sharpe | done | `frontend/src/components/leagues/`, `src/lib/league.ts`; `league.test.ts` | `npm test` | |
 | Trade inside any league from the trade screen | done | league picker in `AppHeader.tsx`; `useTrading.ts` sends `league` with each order | open /trade?league=ID | |
+| Bots screen: make and revoke keys, copy the secret once, quick start | done | `frontend/src/components/bots/BotsScreen.tsx` | `npm run dev`, open /bots | |
 | Component tests, ESLint + Prettier in CI | done | `frontend/test/`; `.github/workflows/frontend.yml` | `npm test && npm run lint` | 30 tests |
+
+## Python starter kit
+
+| Claim | Status | Proof | Re-check it | Measured |
+|---|---|---|---|---|
+| Python client for bots, standard library only | done | `sdk/python/ticker_sdk/client.py`; `sdk/python/tests/test_client.py`; `.github/workflows/sdk.yml` (Python 3.10 and 3.13) | `cd sdk/python && python -m pytest` | |
+| Sample market maker that skews its quotes by inventory and cancels on exit | done | `sdk/python/examples/market_maker.py` | `python examples/market_maker.py NOVA` with a key | run against the local stack 2026-11-07 |
 
 ## Still to come
 
-Bot API keys, Python starter kit and fair-play detection (day 11); Docker Compose, load test, Playwright, libFuzzer, CodeQL and the replay test (day 12). Rows get added here as each one lands. Cut on 2026-11-03 and not claimed: Google sign-in, 2FA, the AI coach, admin console, badges, notifications, News and Bot console screens, practice reset, market sessions, ETF arbitrage scenario, device/IP clustering, data export/delete, engine drop-copy, Under-the-hood and overload pages, ZAP, and AWS.
+Fair-play detection and a strict CSP (moved to day 12); Docker Compose, load test, Playwright, libFuzzer, CodeQL and the replay test (day 12). Rows get added here as each one lands. Cut on 2026-11-03 and not claimed: Google sign-in, 2FA, the AI coach, admin console, badges, notifications, News and Bot console screens, practice reset, market sessions, ETF arbitrage scenario, device/IP clustering, data export/delete, engine drop-copy, Under-the-hood and overload pages, ZAP, and AWS.
