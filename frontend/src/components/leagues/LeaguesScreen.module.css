@@ -130,6 +130,13 @@
   font-weight: 500;
 }
 
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-6);
+  min-width: 0;
+}
+
 .detail {
   gap: 0;
 }

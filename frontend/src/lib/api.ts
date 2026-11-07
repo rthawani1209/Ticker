@@ -262,3 +262,76 @@ export const leagues = {
   leaderboard: (token: string, id: number, by: "return" | "sharpe") =>
     call<Standing[]>(`/v1/leagues/${id}/leaderboard?by=${by}&limit=100`, { token }),
 };
+
+// ---- classroom ----
+
+export type AssignmentKind =
+  "return_at_least" | "trades_at_least" | "drawdown_at_most" | "use_order_type";
+
+export interface Assignment {
+  id: number;
+  leagueId: number;
+  title: string;
+  kind: AssignmentKind;
+  target: number;
+  orderType: string | null;
+  dueAt: string;
+}
+
+export interface Grade {
+  userId: number;
+  username: string;
+  value: number;
+  passed: boolean;
+}
+
+export interface RosterRow {
+  userId: number;
+  username: string;
+  email: string | null;
+  equity: number;
+  returnPct: number;
+  trades: number;
+  lastTrade: string | null;
+}
+
+export interface NewAssignment {
+  title: string;
+  kind: AssignmentKind;
+  target: number;
+  orderType?: string;
+  dueAt: string;
+}
+
+export const classroom = {
+  roster: (token: string, id: number) => call<RosterRow[]>(`/v1/classes/${id}/roster`, { token }),
+  assignments: (token: string, id: number) =>
+    call<(Assignment & { grades: Grade[] })[]>(`/v1/classes/${id}/assignments`, { token }),
+  create: (token: string, id: number, body: NewAssignment) =>
+    call<Assignment>(`/v1/classes/${id}/assignments`, {
+      method: "POST",
+      token,
+      body: JSON.stringify(body),
+    }),
+  remove: (token: string, id: number, aid: number) =>
+    call<void>(`/v1/classes/${id}/assignments/${aid}`, { method: "DELETE", token }),
+  mine: (token: string, id: number) =>
+    call<(Assignment & { value: number | null; passed: boolean })[]>(
+      `/v1/leagues/${id}/assignments`,
+      { token },
+    ),
+  // CSV downloads need the token, so they go through fetch and a blob link.
+  async download(token: string, id: number, what: "trades" | "grades") {
+    const res = await fetch(`${API_URL}/v1/classes/${id}/${what}.csv`, {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new ApiError(res.status, "error", "couldn't export");
+    const name = /filename="([^"]+)"/.exec(res.headers.get("content-disposition") ?? "")?.[1];
+    const url = URL.createObjectURL(await res.blob());
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = name ?? `${what}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  },
+};

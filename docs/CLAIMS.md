@@ -53,7 +53,7 @@ Status: **done** = built and proven; **partial** = built, proof or number still 
 | Rate limits in Redis, sized so a class behind one campus IP isn't locked out | done | `backend/src/app.ts`, `routes/auth.ts`; `auth.test.ts` (`rate limits password guesses per account`, `lets a whole class log in and refresh from one shared IP`, `counts signed-in API calls per user`), `orders.test.ts` (`rate limits order entry per user`) | same | 10 password guesses/min per account, 60 logins/min per IP, 300 API calls/min per user, 20 orders/s per user |
 | Zod validation on every input, parameterized SQL only | done | `backend/src/routes/*.ts`; `validates input` tests | same | |
 | Audit trail of logins, orders and cancels | done | `audit_log` table; `refresh_reuse` check in `auth.test.ts` | same | |
-| Integration tests against real Postgres and Redis | done | `backend/test/harness.ts`; `.github/workflows/backend.yml` | same | 74 tests |
+| Integration tests against real Postgres and Redis | done | `backend/test/harness.ts`; `.github/workflows/backend.yml` | same | 81 tests |
 | Redis pub/sub fan-out to WebSocket servers | done | `backend/src/ws/fanout.ts`; `backend/test/fanout.test.ts` (two gateways, a client on each gets every trade exactly once) | `cd backend && npx vitest run test/fanout.test.ts` | |
 | WebSocket delay with two gateways | done | [`docs/results/ws-delay-2026-11-06.json`](results/ws-delay-2026-11-06.json); `backend/scripts/ws-delay.ts` | `cd backend && npx tsx scripts/ws-delay.ts` | **p50 9 ms, p99 17 ms** (publishing gateway) and **p50 6 ms, p99 12 ms** (relay) to 500 clients, 250k messages each, no drops; one 4-vCPU VM with clients in the same process |
 | [X] ms p99 end-to-end under load (500 users + 50 bots) | planned (day 12) | | | |
@@ -72,7 +72,9 @@ Status: **done** = built and proven; **partial** = built, proof or number still 
 | Live leaderboard by return, refreshed every second, in Redis sorted sets | done | `backend/src/leaderboard.ts`; `leaderboard` test | same | 1 s refresh |
 | Sharpe ratio leaderboard | done | `sharpeRatio()` in `leaderboard.ts` (checked against a hand calculation); `ranks ... by Sharpe` test | same | annualized from 1-minute equity snapshots, risk-free rate 0, shown after 30 returns |
 | Portfolio analytics: equity curve, max drawdown, win rate, Sharpe | done | `backend/src/analytics.ts`, `GET /v1/positions/analytics`; `analytics.test.ts`, `ledger.test.ts` (`reports a portfolio's equity curve, drawdown and win rate`) | `cd backend && npx vitest run test/analytics.test.ts` | |
-| Assignments and grading | planned (day 11) | | | |
+| Student, professor and admin roles, checked on every route | done | `backend/src/auth/roles.ts`; `classroom.test.ts` (`lists every route`, `lets each role call exactly the routes it should`: every route x 5 callers) | `cd backend && npx vitest run test/classroom.test.ts` | 36 routes; a role removed takes effect on the next request |
+| Professor dashboard: roster, every trade, CSV export | done | `backend/src/routes/classroom.ts`, `frontend/src/components/leagues/ClassTools.tsx`; `classroom.test.ts` | same | CSV cells that look like formulas are defused |
+| Auto-graded assignments | done | `backend/src/grading.ts`; `classroom.test.ts` (`grades assignments`) | same | 4 goal types, graded live until the due date, then frozen at it |
 
 ## Web app (Next.js)
 
@@ -85,8 +87,8 @@ Status: **done** = built and proven; **partial** = built, proof or number still 
 | Portfolio screen: equity curve against starting cash, drawdown, Sharpe, win rate, positions, fills | done | `frontend/src/components/portfolio/` | `npm run dev`, open /portfolio | |
 | Leagues screen: create a league with rules, join by code or invite link, live leaderboard by return or Sharpe | done | `frontend/src/components/leagues/`, `src/lib/league.ts`; `league.test.ts` | `npm test` | |
 | Trade inside any league from the trade screen | done | league picker in `AppHeader.tsx`; `useTrading.ts` sends `league` with each order | open /trade?league=ID | |
-| Component tests, ESLint + Prettier in CI | done | `frontend/test/`; `.github/workflows/frontend.yml` | `npm test && npm run lint` | 26 tests |
+| Component tests, ESLint + Prettier in CI | done | `frontend/test/`; `.github/workflows/frontend.yml` | `npm test && npm run lint` | 30 tests |
 
 ## Still to come
 
-Roles, professor tools, assignments, bot API keys, Python starter kit and fair-play detection (day 11); Docker Compose, load test, Playwright, libFuzzer, CodeQL and the replay test (day 12). Rows get added here as each one lands. Cut on 2026-11-03 and not claimed: Google sign-in, 2FA, the AI coach, admin console, badges, notifications, News and Bot console screens, practice reset, market sessions, ETF arbitrage scenario, device/IP clustering, data export/delete, engine drop-copy, Under-the-hood and overload pages, ZAP, and AWS.
+Bot API keys, Python starter kit and fair-play detection (day 11); Docker Compose, load test, Playwright, libFuzzer, CodeQL and the replay test (day 12). Rows get added here as each one lands. Cut on 2026-11-03 and not claimed: Google sign-in, 2FA, the AI coach, admin console, badges, notifications, News and Bot console screens, practice reset, market sessions, ETF arbitrage scenario, device/IP clustering, data export/delete, engine drop-copy, Under-the-hood and overload pages, ZAP, and AWS.

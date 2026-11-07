@@ -12,6 +12,7 @@ import { direction, formatMoney } from "@/lib/format";
 import { queryParam } from "@/lib/query";
 import { codeFrom, EMPTY_FORM, formatPct, inviteLink, readLeagueForm } from "@/lib/league";
 
+import { ClassTools, MyAssignments } from "./ClassTools";
 import styles from "./LeaguesScreen.module.css";
 
 const BOARD_REFRESH_MS = 5_000;
@@ -157,12 +158,27 @@ function LeaguesScreen({ session }: { session: Session }) {
           </nav>
 
           {league ? (
-            <LeagueDetail
-              key={league.id}
-              token={token}
-              league={league}
-              me={session.user.username}
-            />
+            <div className={styles.stack}>
+              <LeagueDetail
+                key={league.id}
+                token={token}
+                league={league}
+                me={session.user.username}
+              />
+              {league.isOwner &&
+              (session.user.role === "professor" || session.user.role === "admin") ? (
+                <ClassTools
+                  key={`t${league.id}`}
+                  token={token}
+                  league={league}
+                  meId={session.user.id}
+                />
+              ) : (
+                !league.isPractice && (
+                  <MyAssignments key={`a${league.id}`} token={token} league={league} />
+                )
+              )}
+            </div>
           ) : (
             list && (
               <p className={ui.empty}>

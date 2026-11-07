@@ -61,6 +61,12 @@ The engine only knows accounts and orders. Money lives in the ledger (`backend/s
 - **Leaderboard.** Every second, each portfolio in a running league is valued at the last traded prices in one SQL query, and its return goes into a Redis sorted set (`lb:<league>:return`). Every minute those values are also saved as equity snapshots, and the Sharpe ratio (mean over standard deviation of the snapshot-to-snapshot returns, annualized) goes into `lb:<league>:sharpe` once a portfolio has 30 returns (before that, a few minutes of data annualizes to nonsense like -800). Without Redis it falls back to memory. Reading the board skips any id that isn't a portfolio in that league, in case Redis outlived a database reset.
 - **Portfolio analytics.** `GET /v1/positions/analytics` returns the equity curve (snapshots plus the live value, thinned to 500 points), max drawdown (largest fall from a running peak), win rate (each fill that reduces a position is one round trip, a win if it made money after commission) and the same Sharpe as the board. The maths is pure functions in `analytics.ts`.
 
+## Classroom
+
+- **Roles.** Student (default), professor and admin, plus guest. Routes that need professor or admin read the role from the database on each request, so taking a role away works straight away rather than when the 15-minute token expires. The first admin is made with `backend/scripts/set-role.ts`; after that admins use `PATCH /v1/admin/users/:id`. A test lists every route with who may call it and fails if a route is missing from the list.
+- **Professor tools** (`/v1/classes/:id/...`) work on leagues the professor owns (admins: any league): roster, every fill with paging, trades and grades as CSV. The owner is the teacher, so they're left out of the roster and grades.
+- **Assignments** have a goal (return at least X%, at least N trades, max drawdown under X%, or fill a given order type) and a due date. Grades are computed when asked, from fills and equity snapshots up to the due date, so they update live and freeze once it passes. No grade table to keep in sync.
+
 ## The market simulator
 
 Each company has a hidden "true value" that drifts randomly and jumps when news comes out. Market makers quote around a lagged estimate of it. News traders react to headlines within a few seconds. Momentum traders chase trends and protect themselves with stop orders. Noise traders add random flow. Scenario files script events like a fraud allegation that triggers a crash and trips the circuit breaker.
