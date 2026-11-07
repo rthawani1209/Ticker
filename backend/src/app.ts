@@ -21,6 +21,8 @@ import orderRoutes, { fillRoutes } from "./routes/orders.js";
 import type { SymbolInfo } from "./symbols.js";
 import type { Fanout } from "./ws/fanout.js";
 import wsRoutes from "./ws/hub.js";
+import adminRoutes from "./routes/admin.js";
+import classroomRoutes, { studentAssignmentRoutes } from "./routes/classroom.js";
 
 export interface Deps {
   config: Config;
@@ -38,6 +40,7 @@ export interface Deps {
 declare module "fastify" {
   interface FastifyInstance {
     deps: Deps;
+    routeList: { method: string; url: string }[];
     authenticate: (req: FastifyRequest, reply: FastifyReply) => Promise<void>;
   }
   interface FastifyRequest {
@@ -52,9 +55,20 @@ export async function buildApp(deps: Deps, opts: { logger?: boolean } = {}) {
     bodyLimit: 16 * 1024,
   });
   app.decorate("deps", deps);
+  // Every route, so the role test can check that none is left out of it.
+  const routeList: { method: string; url: string }[] = [];
+  app.decorate("routeList", routeList);
+  app.addHook("onRoute", (r) => {
+    for (const method of [r.method].flat())
+      if (method !== "HEAD") routeList.push({ method, url: r.url });
+  });
 
   await app.register(helmet);
-  await app.register(cors, { origin: deps.config.CORS_ORIGIN.split(","), credentials: true });
+  await app.register(cors, {
+    origin: deps.config.CORS_ORIGIN.split(","),
+    credentials: true,
+    exposedHeaders: ["content-disposition"], // so CSV downloads keep their file name
+  });
   await app.register(cookie);
   // Signed-in requests are counted per user, everything else per IP. A whole class
   // behind one campus NAT shares an IP, so a per-IP limit alone would lock them out.
@@ -122,6 +136,9 @@ export async function buildApp(deps: Deps, opts: { logger?: boolean } = {}) {
   await app.register(fillRoutes, { prefix: "/v1/fills" });
   await app.register(leagueRoutes, { prefix: "/v1/leagues" });
   await app.register(positionRoutes, { prefix: "/v1/positions" });
+  await app.register(classroomRoutes, { prefix: "/v1/classes" });
+  await app.register(studentAssignmentRoutes, { prefix: "/v1/leagues" });
+  await app.register(adminRoutes, { prefix: "/v1/admin" });
   await app.register(marketRoutes, { prefix: "/v1" });
   await app.register(
     async (scope) => {
