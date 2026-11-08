@@ -1,8 +1,7 @@
 import type { NextConfig } from "next";
 
-const nextConfig: NextConfig = {
-  cacheComponents: true,
-  partialPrefetching: true,
-};
+// No cacheComponents or partial prerendering: every page carries a per-request CSP nonce
+// (src/proxy.ts), and a prerendered shell can't.
+const nextConfig: NextConfig = {};
 
 export default nextConfig;

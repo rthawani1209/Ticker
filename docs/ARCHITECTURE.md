@@ -18,7 +18,7 @@ Everything that trades goes through the same door. Browsers and student bots use
 | `engine/` | C++20 | The exchange. Keeps the order books, matches orders, enforces price bands and halts, and writes every input to a journal. Knows nothing about users or money. |
 | `backend/` | TypeScript (Node, Fastify) | The gateway and the ledger. Logins, the REST and WebSocket APIs, rate limits, and turning JSON orders into the engine's binary messages. Keeps orders, fills, cash, positions and leagues in Postgres, and live rankings in Redis. |
 | `market-sim/` | Python (asyncio) | Bots and news, so the market is alive even with nobody logged in. |
-| `frontend/` | Next.js | The trading app (coming, days 7-8). |
+| `frontend/` | Next.js | The web app: landing, trade, portfolio, leagues (with teacher tools) and bots screens. Pages render per request so each gets a fresh CSP nonce (`src/proxy.ts`). |
 
 ## The engine
 
@@ -66,6 +66,10 @@ The engine only knows accounts and orders. Money lives in the ledger (`backend/s
 - **Roles.** Student (default), professor and admin, plus guest. Routes that need professor or admin read the role from the database on each request, so taking a role away works straight away rather than when the 15-minute token expires. The first admin is made with `backend/scripts/set-role.ts`; after that admins use `PATCH /v1/admin/users/:id`. A test lists every route with who may call it and fails if a route is missing from the list.
 - **Professor tools** (`/v1/classes/:id/...`) work on leagues the professor owns (admins: any league): roster, every fill with paging, trades and grades as CSV. The owner is the teacher, so they're left out of the roster and grades.
 - **Assignments** have a goal (return at least X%, at least N trades, max drawdown under X%, or fill a given order type) and a due date. Grades are computed when asked, from fills and equity snapshots up to the due date, so they update live and freeze once it passes. No grade table to keep in sync.
+
+- **Fair play** (`fairplay.ts`, the Fair play tab). Two checks over a league, run when the teacher opens the tab. They flag; nothing happens to a student automatically.
+  - *Collusion.* Two fills with the same engine trade id are the two sides of one trade, so the server can see who traded with whom. Each fill also stores the middle of the book when it was recorded. A pair is flagged at 5+ trades together, 50%+ of one person's shares, and prices on average 2%+ from the middle. Price-time priority already stops most of this (a colluder's high offer can't trade while a cheaper one rests), so in practice it catches trades placed inside a wide spread.
+  - *Spoofing.* Per person: 20+ orders, 90%+ cancelled unfilled, cancelled orders 5x+ the size of the filled ones, and fills on the other side. The size test is what separates it from a market-making bot, which cancels just as often but at the size it trades. Bracket exits and rejected orders aren't counted.
 
 ## Bots
 

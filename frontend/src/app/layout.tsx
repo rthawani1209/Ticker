@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Chakra_Petch, Inter_Tight, JetBrains_Mono } from "next/font/google";
+import { headers } from "next/headers";
 
 import { THEME_SCRIPT } from "@/lib/theme";
 
@@ -19,7 +20,9 @@ export const metadata: Metadata = {
     "A real stock exchange for your class: students and bots trading in a live simulated market.",
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default async function RootLayout({ children }: LayoutProps<"/">) {
+  // Set by src/proxy.ts; reading it renders each page per request, which the nonce needs.
+  const nonce = (await headers()).get("x-nonce") ?? undefined;
   return (
     <html
       lang="en"
@@ -28,7 +31,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       suppressHydrationWarning
     >
       <head>
-        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+        <script nonce={nonce} dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
       </head>
       <body>{children}</body>
     </html>
