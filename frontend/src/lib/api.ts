@@ -1,8 +1,18 @@
 // The backend's REST and WebSocket API. Matches backend/src/routes/market.ts and
 // backend/src/ws/hub.ts.
 
-export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
-export const WS_URL = API_URL.replace(/^http/, "ws") + "/ws";
+// NEXT_PUBLIC_API_URL="/" sends REST calls to this site, which forwards /v1 to the
+// backend (next.config.ts). In production that keeps the login cookie first-party:
+// browsers won't send a SameSite cookie to a backend on another domain. Vercel can't
+// forward WebSockets, so the socket goes straight to the backend (NEXT_PUBLIC_WS_URL);
+// it signs in with a token, not the cookie.
+export const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080").replace(
+  /\/$/,
+  "",
+);
+export const WS_URL = process.env.NEXT_PUBLIC_WS_URL ?? API_URL.replace(/^http/, "ws") + "/ws";
+// Where bots and scripts reach the backend directly.
+export const PUBLIC_API_URL = API_URL || WS_URL.replace(/^ws/, "http").replace(/\/ws$/, "");
 
 export interface SymbolSummary {
   ticker: string;

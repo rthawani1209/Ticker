@@ -8,7 +8,7 @@ import ui from "@/components/app/Page.module.css";
 import { SessionGate } from "@/components/session/SessionGate";
 import { Button } from "@/components/ui/Button";
 import {
-  API_URL,
+  PUBLIC_API_URL,
   ApiError,
   apiKeys,
   leagues as leagueApi,
@@ -183,14 +183,14 @@ function BotsScreen({ session }: { session: Session }) {
               </ol>
               <pre className="mono">{`from ticker_sdk import Ticker
 
-t = Ticker("${API_URL}",
+t = Ticker("${PUBLIC_API_URL}",
            "tk_...")
 q = t.quote("NOVA")
 t.buy("NOVA", 10, price=q.bid)`}</pre>
               <ol start={3}>
                 <li>
                   Or run the sample market maker:
-                  <pre className="mono">{`export TICKER_URL=${API_URL}
+                  <pre className="mono">{`export TICKER_URL=${PUBLIC_API_URL}
 export TICKER_KEY=tk_...
 python examples/market_maker.py NOVA`}</pre>
                 </li>

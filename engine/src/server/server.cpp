@@ -69,19 +69,39 @@ void Server::start() {
         next_session_ = max_session + 1;
     }
 
-    listen_fd_ = ::socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
+    // An IPv6 host such as "::" also takes IPv4 connections. Railway's private network
+    // is IPv6, so the deployed engine listens on "::".
+    bool v6 = cfg_.host.find(':') != std::string::npos;
+    listen_fd_ = ::socket(v6 ? AF_INET6 : AF_INET, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
+    if (listen_fd_ < 0 && errno == EAFNOSUPPORT && cfg_.host == "::") {
+        // A machine without IPv6 (some containers): "::" means every address, so take IPv4's.
+        cfg_.host = "0.0.0.0";
+        v6 = false;
+        listen_fd_ = ::socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
+    }
     if (listen_fd_ < 0) throw_errno("socket");
-    int one = 1;
+    int one = 1, zero = 0;
     ::setsockopt(listen_fd_, SOL_SOCKET, SO_REUSEADDR, &one, sizeof one);
-    sockaddr_in addr{};
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons(cfg_.port);
-    if (::inet_pton(AF_INET, cfg_.host.c_str(), &addr.sin_addr) != 1) throw std::runtime_error("bad host: " + cfg_.host);
-    if (::bind(listen_fd_, reinterpret_cast<sockaddr*>(&addr), sizeof addr) < 0) throw_errno("bind");
+    sockaddr_storage addr{};
+    socklen_t len;
+    if (v6) {
+        ::setsockopt(listen_fd_, IPPROTO_IPV6, IPV6_V6ONLY, &zero, sizeof zero);
+        auto* a = reinterpret_cast<sockaddr_in6*>(&addr);
+        a->sin6_family = AF_INET6;
+        a->sin6_port = htons(cfg_.port);
+        if (::inet_pton(AF_INET6, cfg_.host.c_str(), &a->sin6_addr) != 1) throw std::runtime_error("bad host: " + cfg_.host);
+        len = sizeof *a;
+    } else {
+        auto* a = reinterpret_cast<sockaddr_in*>(&addr);
+        a->sin_family = AF_INET;
+        a->sin_port = htons(cfg_.port);
+        if (::inet_pton(AF_INET, cfg_.host.c_str(), &a->sin_addr) != 1) throw std::runtime_error("bad host: " + cfg_.host);
+        len = sizeof *a;
+    }
+    if (::bind(listen_fd_, reinterpret_cast<sockaddr*>(&addr), len) < 0) throw_errno("bind");
     if (::listen(listen_fd_, 128) < 0) throw_errno("listen");
-    socklen_t len = sizeof addr;
     ::getsockname(listen_fd_, reinterpret_cast<sockaddr*>(&addr), &len);
-    port_ = ntohs(addr.sin_port);
+    port_ = ntohs(v6 ? reinterpret_cast<sockaddr_in6*>(&addr)->sin6_port : reinterpret_cast<sockaddr_in*>(&addr)->sin_port);
 
     epoll_fd_ = ::epoll_create1(EPOLL_CLOEXEC);
     if (epoll_fd_ < 0) throw_errno("epoll_create1");

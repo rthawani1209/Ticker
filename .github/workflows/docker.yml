@@ -1,0 +1,16 @@
+name: docker
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  compose:
+    name: build images and smoke-test the stack
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build, start and check
+        run: scripts/compose-smoke.sh

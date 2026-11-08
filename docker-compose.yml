@@ -1,0 +1,71 @@
+# The whole exchange on one machine: docker compose up --build, then open http://localhost:3000.
+# Change JWT_SECRET and TICKER_TOKEN (in a .env file next to this one) for anything but a laptop.
+x-token: &token ${TICKER_TOKEN:-48151623}
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ticker
+      POSTGRES_PASSWORD: ticker
+      POSTGRES_DB: ticker
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "ticker"]
+      interval: 2s
+      retries: 30
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      retries: 30
+
+  engine:
+    build: engine
+    environment:
+      TICKER_TOKEN: *token
+    volumes: [journal:/data]
+
+  backend:
+    build: backend
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      engine: { condition: service_started }
+    environment:
+      DATABASE_URL: postgres://ticker:ticker@postgres:5432/ticker
+      REDIS_URL: redis://redis:6379
+      ENGINE_HOST: engine
+      ENGINE_TOKEN: *token
+      JWT_SECRET: ${JWT_SECRET:-compose-on-a-laptop-only-change-me-0123456789}
+      CORS_ORIGIN: http://localhost:3000
+    ports: ["8080:8080"]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:8080/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 2s
+      retries: 30
+
+  market-sim:
+    build: market-sim
+    depends_on:
+      backend: { condition: service_healthy }
+    environment:
+      ENGINE_HOST: engine
+      TICKER_TOKEN: *token
+      REDIS_URL: redis://redis:6379
+      SCENARIO: ${SCENARIO:-calm}
+    restart: on-failure
+
+  frontend:
+    build:
+      context: frontend
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:8080
+    depends_on: [backend]
+    ports: ["3000:3000"]
+
+volumes:
+  pgdata:
+  journal:

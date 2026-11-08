@@ -259,3 +259,22 @@ TEST(ServerTest, PipelinedBurstIsFullyAcked) {
     while (acks < kOrders / 2 && c.wait_event(is(EventType::Ack))) ++acks;
     EXPECT_EQ(acks, kOrders / 2);
 }
+
+TEST(ServerTest, ListensOnIpv6AndIpv4) {
+    auto cfg = test_config();
+    cfg.host = "::";
+    Server server(cfg);
+    server.start();  // falls back to IPv4 where there's no IPv6
+
+    TestClient v4(server.port());  // 127.0.0.1 into the "::" listener
+    EXPECT_TRUE(v4.logon(7));
+
+    int fd = ::socket(AF_INET6, SOCK_STREAM, 0);
+    if (fd < 0) GTEST_SKIP() << "no IPv6 on this machine";
+    sockaddr_in6 addr{};
+    addr.sin6_family = AF_INET6;
+    addr.sin6_port = htons(server.port());
+    addr.sin6_addr = in6addr_loopback;
+    EXPECT_EQ(::connect(fd, reinterpret_cast<sockaddr*>(&addr), sizeof addr), 0);
+    ::close(fd);
+}

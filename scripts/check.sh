@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Run the same builds and tests as CI before pushing.
-# Usage: scripts/check.sh [--fuzz]   (--fuzz adds the 1M-command differential run)
+# Usage: scripts/check.sh [--fuzz] [--docker]
+#   --fuzz    adds the 1M-command differential run
+#   --docker  builds the images and smoke-tests the stack like the docker CI job
 # clang sanitizer builds need libclang-rt-18-dev (apt install libclang-rt-18-dev); market-sim needs pytest; backend and frontend need
 # Node 22+; backend also needs Postgres and Redis running locally.
 set -euo pipefail
@@ -50,10 +52,15 @@ echo "== frontend"
     npx vitest run && npm run -s build
 ) > engine/build-check/frontend.log 2>&1 || { tail -60 engine/build-check/frontend.log; exit 1; }
 
-if [ "${1:-}" = "--fuzz" ]; then
+if [[ " $* " == *" --fuzz "* ]]; then
   echo "== differential fuzz (1M commands per seed)"
   TICKER_FUZZ_COMMANDS=1000000 engine/build-check/g++-release/engine_tests \
     --gtest_filter='Differential*' > /dev/null
+fi
+
+if [[ " $* " == *" --docker "* ]]; then
+  echo "== docker compose smoke test"
+  scripts/compose-smoke.sh
 fi
 
 echo "all checks passed"

@@ -1,13 +1,13 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-import { API_URL } from "@/lib/api";
+import { API_URL, WS_URL } from "@/lib/api";
 import { contentSecurityPolicy } from "@/lib/csp";
 
 // A fresh nonce on every page request. Next.js reads it from the CSP request header and
 // puts it on its own scripts; the root layout puts it on the theme script.
 export function proxy(request: NextRequest) {
   const nonce = Buffer.from(crypto.randomUUID()).toString("base64");
-  const csp = contentSecurityPolicy(nonce, API_URL, process.env.NODE_ENV === "development");
+  const csp = contentSecurityPolicy(nonce, API_URL, WS_URL, process.env.NODE_ENV === "development");
 
   const headers = new Headers(request.headers);
   headers.set("x-nonce", nonce);
