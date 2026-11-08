@@ -8,6 +8,7 @@ import {
   ApiError,
   classroom,
   type Assignment,
+  type FairPlay,
   type Grade,
   type League,
   type RosterRow,
@@ -38,17 +39,23 @@ export function ClassTools({
   league: League;
   meId: number;
 }) {
-  const [tab, setTab] = useState<"roster" | "assignments">("roster");
+  const [tab, setTab] = useState<"roster" | "assignments" | "fairplay">("roster");
   const [roster, setRoster] = useState<RosterRow[] | null>(null);
   const [work, setWork] = useState<(Assignment & { grades: Grade[] })[] | null>(null);
+  const [checks, setChecks] = useState<FairPlay | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(() => {
-    Promise.all([classroom.roster(token, league.id), classroom.assignments(token, league.id)]).then(
-      ([r, a]) => {
+    Promise.all([
+      classroom.roster(token, league.id),
+      classroom.assignments(token, league.id),
+      classroom.fairPlay(token, league.id),
+    ]).then(
+      ([r, a, f]) => {
         // The teacher is a member of their own league; leave them out of the class lists.
         setRoster(r.filter((x) => x.userId !== meId));
         setWork(a);
+        setChecks(f);
         setError(null);
       },
       (e) => setError(e instanceof ApiError ? e.message : "couldn't load the class"),
@@ -82,6 +89,17 @@ export function ClassTools({
           >
             Assignments {work && <span>{work.length}</span>}
           </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === "fairplay"}
+            onClick={() => setTab("fairplay")}
+          >
+            Fair play{" "}
+            {checks && (
+              <span data-alert={flagCount(checks) > 0 || undefined}>{flagCount(checks)}</span>
+            )}
+          </button>
         </div>
         <div className={styles.exports}>
           <Button variant="ghost" onClick={() => exportCsv("trades")}>
@@ -99,10 +117,134 @@ export function ClassTools({
       )}
       {tab === "roster" ? (
         <Roster rows={roster} />
-      ) : (
+      ) : tab === "assignments" ? (
         <Assignments token={token} league={league} meId={meId} work={work} onChange={load} />
+      ) : (
+        <FairPlayChecks checks={checks} onRefresh={load} />
       )}
     </section>
+  );
+}
+
+const flagCount = (f: FairPlay) =>
+  f.collusion.filter((p) => p.flagged).length + f.spoofing.filter((s) => s.flagged).length;
+
+const shares = (n: number) => (n ? `${Math.round(n).toLocaleString("en-US")} sh` : "—");
+
+const pct = (x: number | null, digits = 0) => (x === null ? "—" : `${(x * 100).toFixed(digits)}%`);
+
+// Collusion and spoofing checks. They only point at something worth a look; the
+// numbers are there so the teacher can decide.
+function FairPlayChecks({ checks, onRefresh }: { checks: FairPlay | null; onRefresh: () => void }) {
+  if (!checks) return <p className={ui.empty}>Loading…</p>;
+  const { collusion: c, spoofing: s } = checks.thresholds;
+  return (
+    <div className={styles.fair}>
+      <div className={styles.fairHead}>
+        <p>Flags are a reason to look, not proof. Nothing happens to a student automatically.</p>
+        <Button variant="ghost" onClick={onRefresh}>
+          Run again
+        </Button>
+      </div>
+
+      <h3 className="label">Trading partners</h3>
+      <p className={styles.rule}>
+        Flagged when two people make {c.minTrades}+ trades together, that&apos;s at least{" "}
+        {pct(c.minShare)} of one person&apos;s trading, and their prices sit on average{" "}
+        {pct(c.minOffMarket)}+ away from the middle of the book. That&apos;s how one account hands
+        its gains to another.
+      </p>
+      {checks.collusion.length === 0 ? (
+        <p className={ui.empty}>No one in this league has traded with a classmate yet.</p>
+      ) : (
+        <div className={ui.scroll}>
+          <table className={`mono ${ui.table} ${styles.checks}`}>
+            <thead>
+              <tr className="label">
+                <th aria-label="Result" />
+                <th>Pair</th>
+                <th>Trades</th>
+                <th>Shares</th>
+                <th>Share of each</th>
+                <th>Off market</th>
+              </tr>
+            </thead>
+            <tbody>
+              {checks.collusion.map((p) => (
+                <tr key={`${p.a}:${p.b}`} data-flagged={p.flagged || undefined}>
+                  <td>
+                    <Verdict flagged={p.flagged} />
+                  </td>
+                  <td>
+                    {p.a} <span className={styles.muted}>↔</span> {p.b}
+                  </td>
+                  <td>{p.trades}</td>
+                  <td>{p.shares.toLocaleString("en-US")}</td>
+                  <td>
+                    {pct(p.shareOfA)} / {pct(p.shareOfB)}
+                  </td>
+                  <td>{pct(p.offMarket, 1)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <h3 className="label">Order patterns</h3>
+      <p className={styles.rule}>
+        Flagged when someone sends {s.minOrders}+ orders, cancels {pct(s.minCancelRate)}+ of them,
+        the cancelled ones are {s.minSizeRatio}x+ bigger than the ones that fill, and the fills are
+        on the other side. Big fake orders to move the price for a small real one is spoofing. A
+        market-making bot cancels a lot too, but at the same size it trades.
+      </p>
+      {checks.spoofing.length === 0 ? (
+        <p className={ui.empty}>No orders yet.</p>
+      ) : (
+        <div className={ui.scroll}>
+          <table className={`mono ${ui.table} ${styles.checks}`}>
+            <thead>
+              <tr className="label">
+                <th aria-label="Result" />
+                <th>Student</th>
+                <th>Orders</th>
+                <th>Cancelled</th>
+                <th>Avg cancelled</th>
+                <th>Avg filled</th>
+                <th>Size ratio</th>
+              </tr>
+            </thead>
+            <tbody>
+              {checks.spoofing.map((r) => (
+                <tr key={r.username} data-flagged={r.flagged || undefined}>
+                  <td>
+                    <Verdict flagged={r.flagged} />
+                  </td>
+                  <td>{r.username}</td>
+                  <td>{r.orders}</td>
+                  <td>{pct(r.cancelRate)}</td>
+                  <td>{shares(r.avgCancelledQty)}</td>
+                  <td>{shares(r.avgFilledQty)}</td>
+                  <td>
+                    {r.sizeRatio === null || r.avgCancelledQty === 0
+                      ? "—"
+                      : `${r.sizeRatio.toFixed(1)}x`}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Verdict({ flagged }: { flagged: boolean }) {
+  return (
+    <span className={`mono ${styles.badge}`} data-flag={flagged}>
+      {flagged ? "look" : "ok"}
+    </span>
   );
 }
 

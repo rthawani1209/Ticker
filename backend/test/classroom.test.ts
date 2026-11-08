@@ -65,6 +65,7 @@ describe("roles", () => {
     "POST /v1/leagues": "account",
     "POST /v1/leagues/join": "account",
     "GET /v1/classes/:id/roster": "professor",
+    "GET /v1/classes/:id/fairplay": "professor",
     "GET /v1/classes/:id/trades": "professor",
     "GET /v1/classes/:id/trades.csv": "professor",
     "GET /v1/classes/:id/assignments": "professor",

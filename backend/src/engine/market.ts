@@ -79,6 +79,19 @@ export class SymbolBook {
     if (this.candles.length > MAX_CANDLES) this.candles.shift();
   }
 
+  bestBid(): number | undefined {
+    let best: number | undefined;
+    for (const price of this.bids.keys()) if (best === undefined || price > best) best = price;
+    return best;
+  }
+
+  // The middle of the spread, or the last trade when one side is empty.
+  mid(): number {
+    const bid = this.bestBid();
+    const ask = this.bestAsk();
+    return bid !== undefined && ask !== undefined ? Math.round((bid + ask) / 2) : this.last;
+  }
+
   bestAsk(): number | undefined {
     let best: number | undefined;
     for (const price of this.asks.keys()) if (best === undefined || price < best) best = price;

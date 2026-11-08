@@ -9,6 +9,7 @@
 //   POST   /v1/classes/:id/assignments
 //   DELETE /v1/classes/:id/assignments/:aid
 //   GET    /v1/classes/:id/grades.csv        one row per student, one column per assignment
+//   GET    /v1/classes/:id/fairplay          collusion and spoofing checks (see fairplay.ts)
 //   GET    /v1/leagues/:id/assignments       (students) assignments with your own grade
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
@@ -17,6 +18,7 @@ import { audit } from "../audit.js";
 import { requireRole } from "../auth/roles.js";
 import { toCsv } from "../csv.js";
 import { ApiError } from "../errors.js";
+import { fairPlay } from "../fairplay.js";
 import { gradeAssignment, toAssignment, type Assignment } from "../grading.js";
 
 const Id = z.object({ id: z.coerce.number().int().positive() });
@@ -139,6 +141,8 @@ export default async function classroomRoutes(app: FastifyInstance) {
       .send(body);
 
   app.get("/:id/roster", async (req) => roster((await ownedLeague(req)).id));
+
+  app.get("/:id/fairplay", async (req) => fairPlay(db, (await ownedLeague(req)).id));
 
   app.get("/:id/trades", async (req) => {
     const league = await ownedLeague(req);

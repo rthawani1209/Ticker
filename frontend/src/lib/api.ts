@@ -303,7 +303,39 @@ export interface NewAssignment {
   dueAt: string;
 }
 
+export interface PairCheck {
+  a: string;
+  b: string;
+  trades: number;
+  shares: number;
+  shareOfA: number;
+  shareOfB: number;
+  offMarket: number | null;
+  flagged: boolean;
+}
+
+export interface OrderCheck {
+  username: string;
+  orders: number;
+  cancelRate: number;
+  avgCancelledQty: number;
+  avgFilledQty: number;
+  sizeRatio: number | null;
+  oppositeFills: number;
+  flagged: boolean;
+}
+
+export interface FairPlay {
+  thresholds: {
+    collusion: { minTrades: number; minShare: number; minOffMarket: number };
+    spoofing: { minOrders: number; minCancelRate: number; minSizeRatio: number };
+  };
+  collusion: PairCheck[];
+  spoofing: OrderCheck[];
+}
+
 export const classroom = {
+  fairPlay: (token: string, id: number) => call<FairPlay>(`/v1/classes/${id}/fairplay`, { token }),
   roster: (token: string, id: number) => call<RosterRow[]>(`/v1/classes/${id}/roster`, { token }),
   assignments: (token: string, id: number) =>
     call<(Assignment & { grades: Grade[] })[]>(`/v1/classes/${id}/assignments`, { token }),

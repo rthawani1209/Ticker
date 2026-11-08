@@ -537,9 +537,20 @@ export class OrderService extends EventEmitter {
           // The fill row goes in first: if this exact fill was already recorded
           // (a replayed or duplicated event), nothing below runs.
           const inserted = await client.query(
-            `INSERT INTO fills (order_id, user_id, portfolio_id, symbol_id, side, price, qty, commission, trade_id)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT DO NOTHING RETURNING id`,
-            [o.id, o.user_id, o.portfolio_id, o.symbol_id, o.side, e.price, e.qty, fee, e.tradeId],
+            `INSERT INTO fills (order_id, user_id, portfolio_id, symbol_id, side, price, qty, commission, trade_id, ref_price)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) ON CONFLICT DO NOTHING RETURNING id`,
+            [
+              o.id,
+              o.user_id,
+              o.portfolio_id,
+              o.symbol_id,
+              o.side,
+              e.price,
+              e.qty,
+              fee,
+              e.tradeId,
+              this.bridge.books[o.symbol_id]!.mid(),
+            ],
           );
           if (!inserted.rows[0]) return;
           await applyFill(client, o.portfolio_id, {

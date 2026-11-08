@@ -181,6 +181,63 @@ button.expand {
   color: var(--up);
 }
 
+.badge[data-flag="true"] {
+  border-color: var(--you);
+  background: color-mix(in srgb, var(--you) 12%, transparent);
+  color: var(--you);
+}
+
+.tabs span[data-alert] {
+  color: var(--you);
+}
+
+.fair {
+  padding-bottom: var(--s-4);
+}
+
+.fair h3 {
+  margin: var(--s-6) var(--s-6) var(--s-2);
+  font-weight: 400;
+}
+
+.fairHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--s-4);
+  padding: var(--s-4) var(--s-6) 0;
+}
+
+.fairHead p,
+.rule {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.rule {
+  max-width: 760px;
+  padding: 0 var(--s-6) var(--s-3);
+  color: var(--text-3);
+}
+
+/* The verdict leads so it's visible on a phone without scrolling the table. */
+.checks th:first-child,
+.checks td:first-child {
+  width: 1%;
+  padding-right: 0;
+}
+
+.checks th:nth-child(2),
+.checks td:nth-child(2) {
+  text-align: left;
+}
+
+.fair tr[data-flagged] td {
+  background: color-mix(in srgb, var(--you) 6%, transparent);
+}
+
 @media (max-width: 1000px) {
   .form {
     grid-template-columns: 1fr 1fr;
@@ -196,6 +253,20 @@ button.expand {
 }
 
 @media (max-width: 600px) {
+  .fairHead {
+    flex-direction: column;
+    align-items: flex-start;
+    padding: var(--s-4) var(--s-4) 0;
+  }
+
+  .fair h3 {
+    margin-inline: var(--s-4);
+  }
+
+  .rule {
+    padding-inline: var(--s-4);
+  }
+
   .form {
     grid-template-columns: 1fr;
     padding: var(--s-4);
