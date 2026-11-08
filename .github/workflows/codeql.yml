@@ -22,7 +22,7 @@ jobs:
         language: [c-cpp, javascript-typescript, python]
     steps:
       - uses: actions/checkout@v4
-      - uses: github/codeql-action/init@v3
+      - uses: github/codeql-action/init@v4
         with:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.language == 'c-cpp' && 'manual' || 'none' }}
@@ -31,4 +31,4 @@ jobs:
         run: |
           cmake -S engine -B engine/build -DCMAKE_BUILD_TYPE=Release -DTICKER_BUILD_TESTS=OFF -DTICKER_BUILD_BENCH=OFF
           cmake --build engine/build -j
-      - uses: github/codeql-action/analyze@v3
+      - uses: github/codeql-action/analyze@v4
