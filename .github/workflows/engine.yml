@@ -59,7 +59,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       # The corpus carries over between runs, so each run starts where the last stopped.
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: engine/fuzz/corpus
           key: book-fuzz-${{ github.run_id }}
