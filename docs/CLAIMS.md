@@ -20,6 +20,7 @@ Status: **done** = built and proven; **partial** = built, proof or number still 
 | O(1) best-price lookup with a 3-level bitmap | done | `engine/include/ticker/bit_tree.hpp`; `BitTree.MatchesStdSet` | `ctest --test-dir engine/build -R BitTree` | |
 | O(1) cancel (hash map to an intrusive list node) | done | `order_map.hpp`, `order_book.hpp`; `AddCancel` in the bench file | `scripts/bench.sh` | add+cancel 258 ns with 100 resting orders vs 208 ns with 10,000 (reference book: 0.7 µs vs 42 µs) |
 | No heap allocation on the matching path | done | `engine/tests/alloc_test.cpp` (`HotPathDoesNotAllocate`) | `engine/build/alloc_test` | 0 allocations over 300k commands |
+| Coverage-guided fuzzing (libFuzzer + ASan/UBSan): raw wire bytes, parsed as the server parses them, go into the real and the reference book, which must agree | done | `engine/fuzz/book_fuzz.cpp`; CI job "libFuzzer" (5 min a run, corpus kept between runs) | `scripts/check.sh --fuzz` | first local run 2026-11-08: 1.57M inputs in 60 s, no disagreement or sanitizer error |
 | Differential fuzzing against a simple reference engine | done | `engine/tests/differential_test.cpp`, `reference_book.hpp`; CI job "differential fuzz (long)" | `TICKER_FUZZ_COMMANDS=1000000 engine/build/engine_tests --gtest_filter='Differential*'` | 20M random commands per CI run (4 suites x 5 seeds x 1M) plus 200k with grouped accounts, output must match exactly |
 | ASan, UBSan and TSan in CI | done | `.github/workflows/engine.yml` | `scripts/check.sh` | |
 | Lock-free single-producer/single-consumer ring buffers | done | `spsc_ring.hpp`; `SpscRing.TwoThreadsKeepOrder` under TSan | `ctest --test-dir engine/build -R SpscRing` | |
@@ -102,6 +103,17 @@ Status: **done** = built and proven; **partial** = built, proof or number still 
 | Python client for bots, standard library only | done | `sdk/python/ticker_sdk/client.py`; `sdk/python/tests/test_client.py`; `.github/workflows/sdk.yml` (Python 3.10 and 3.13) | `cd sdk/python && python -m pytest` | |
 | Sample market maker that skews its quotes by inventory and cancels on exit | done | `sdk/python/examples/market_maker.py` | `python examples/market_maker.py NOVA` with a key | run against the local stack 2026-11-07 |
 
+## Operations
+
+| Claim | Status | Proof | Re-check it | Measured |
+|---|---|---|---|---|
+| The whole stack runs from one `docker compose up` | done | `docker-compose.yml`, a Dockerfile per service; CI job "docker" builds every image and runs `scripts/compose-smoke.sh` (health, the simulated market trades, sign up, place an order, the web app serves with its CSP) | `scripts/check.sh --docker` | |
+| Deploy setup for Vercel (web) + Railway (engine, API, simulator, Postgres, Redis) | partial | `docs/DEPLOY.md`, `*/railway.json`; engine listens on IPv6 for Railway's private network (`ServerTest.ListensOnIpv6AndIpv4`) | follow DEPLOY.md | not live until the accounts are connected |
+| Login cookie stays first-party in production: REST goes through the web app's own domain, the WebSocket goes direct | done | `frontend/next.config.ts` rewrites, `src/lib/api.ts`; checked in a browser with the app and API on different sites (127.0.0.1 vs localhost) | DEPLOY.md step 4 | |
+| CodeQL (C++, TypeScript, Python) and Dependabot | done | `.github/workflows/codeql.yml`, `.github/dependabot.yml` | GitHub Security tab | |
+| Load test: many users trading over WebSockets for 10 minutes | done | `backend/scripts/load-test.ts`; `docs/results/load-2026-11-08.json` and `.svg` | `cd backend && npx tsx scripts/load-test.ts` | 150 users, 150 orders/s for 603 s on a 4-core cloud VM, everything on one machine: 89,843 orders and cancels, 61,146 fills, 0 errors, 0 lost; p50 9 ms, p99 48 ms, p99.9 80 ms, max 169 ms |
+| Order entry refuses work (503 "busy") instead of queueing without limit | done | `maxBacklog` in `backend/src/orders.ts`; `orders.test.ts` (`turns orders away with 503 while the event queue is backed up`); `docs/results/load-overload-2026-11-08.json` | `OUT_NAME=load-overload USERS=200 ORDERS_PER_USER=2 DURATION_S=90 npx tsx scripts/load-test.ts` | at 400 orders/s (past capacity): about 310/s served, 20% turned away, p50 1.1 s and p99 2.4 s, flat for the whole run; before the limit the same test reached 25 s and kept climbing |
+
 ## Still to come
 
-Docker Compose, load test, Playwright, libFuzzer, CodeQL and the replay test (day 12). Rows get added here as each one lands. Cut on 2026-11-03 and not claimed: Google sign-in, 2FA, the AI coach, admin console, badges, notifications, News and Bot console screens, practice reset, market sessions, ETF arbitrage scenario, device/IP clustering, data export/delete, engine drop-copy, Under-the-hood and overload pages, ZAP, and AWS.
+Playwright end-to-end tests over every screen and the recorded-day replay test (Nov 9). Rows get added here as each one lands. Cut on 2026-11-03 and not claimed: Google sign-in, 2FA, the AI coach, admin console, badges, notifications, News and Bot console screens, practice reset, market sessions, ETF arbitrage scenario, device/IP clustering, data export/delete, engine drop-copy, Under-the-hood and overload pages, ZAP, and AWS.

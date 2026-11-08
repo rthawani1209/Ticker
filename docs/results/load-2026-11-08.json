@@ -1,0 +1,457 @@
+{
+  "date": "2026-11-08T18:28:12.890Z",
+  "what": "orders and cancels over WebSockets from many users at once, send -> gateway reply",
+  "setup": {
+    "users": 150,
+    "orders_per_user_per_second": 1,
+    "seconds": 603,
+    "mix": "half resting limit orders (cancelled after ~2 s), half crossing IOC orders; 1-5 shares; 8 symbols",
+    "same_process": "the gateway and all clients share one Node process; the engine, Postgres and Redis run on the same machine"
+  },
+  "machine": {
+    "cpu": "Intel(R) Xeon(R) Processor @ 2.30GHz",
+    "cores": 4,
+    "node": "v22.22.0",
+    "platform": "linux 6.18.44-fc-v310"
+  },
+  "totals": {
+    "sent": 89843,
+    "accepted": 71307,
+    "rejected_by_rules": 0,
+    "cancels_after_fill": 18536,
+    "errors": 0,
+    "no_reply": 0,
+    "fills": 61146,
+    "replies_per_second": 149,
+    "reasons": {}
+  },
+  "latency_ms": {
+    "p50": 9,
+    "p90": 25,
+    "p99": 48,
+    "p999": 80,
+    "max": 169
+  },
+  "per_10s": [
+    {
+      "t": 0,
+      "replies": 1350,
+      "errors": 0,
+      "p50": 8,
+      "p99": 45
+    },
+    {
+      "t": 10,
+      "replies": 1500,
+      "errors": 0,
+      "p50": 7,
+      "p99": 33
+    },
+    {
+      "t": 20,
+      "replies": 1500,
+      "errors": 0,
+      "p50": 10,
+      "p99": 100
+    },
+    {
+      "t": 30,
+      "replies": 1500,
+      "errors": 0,
+      "p50": 7,
+      "p99": 86
+    },
+    {
+      "t": 40,
+      "replies": 1500,
+      "errors": 0,
+      "p50": 6,
+      "p99": 43
+    },
+    {
+      "t": 50,
+      "replies": 1500,
+      "errors": 0,
+      "p50": 7,
+      "p99": 36
+    },
+    {
+      "t": 60,
+      "replies": 1500,
+      "errors": 0,
+      "p50": 7,
+      "p99": 29
+    },
+    {
+      "t": 70,
+      "replies": 1500,
+      "errors": 0,
+      "p50": 8,
+      "p99": 49
+    },
+    {
+      "t": 80,
+      "replies": 1499,
+      "errors": 0,
+      "p50": 6,
+      "p99": 32
+    },
+    {
+      "t": 90,
+      "replies": 1500,
+      "errors": 0,
+      "p50": 6,
+      "p99": 32
+    },
+    {
+      "t": 100,
+      "replies": 1500,
+      "errors": 0,
+      "p50": 6,
+      "p99": 33
+    },
+    {
+      "t": 110,
+      "replies": 1500,
+      "errors": 0,
+      "p50": 6,
+      "p99": 31
+    },
+    {
+      "t": 120,
+      "replies": 1500,
+      "errors": 0,
+      "p50": 7,
+      "p99": 47
+    },
+    {
+      "t": 130,
+      "replies": 1500,
+      "errors": 0,
+      "p50": 8,
+      "p99": 35
+    },
+    {
+      "t": 140,
+      "replies": 1500,
+      "errors": 0,
+      "p50": 6,
+      "p99": 37
+    },
+    {
+      "t": 150,
+      "replies": 1500,
+      "errors": 0,
+      "p50": 7,
+      "p99": 38
+    },
+    {
+      "t": 160,
+      "replies": 1500,
+      "errors": 0,
+      "p50": 7,
+      "p99": 29
+    },
+    {
+      "t": 170,
+      "replies": 1500,
+      "errors": 0,
+      "p50": 7,
+      "p99": 47
+    },
+    {
+      "t": 180,
+      "replies": 1500,
+      "errors": 0,
+      "p50": 7,
+      "p99": 30
+    },
+    {
+      "t": 190,
+      "replies": 1500,
+      "errors": 0,
+      "p50": 7,
+      "p99": 35
+    },
+    {
+      "t": 200,
+      "replies": 1500,
+      "errors": 0,
+      "p50": 7,
+      "p99": 35
+    },
+    {
+      "t": 210,
+      "replies": 1500,
+      "errors": 0,
+      "p50": 8,
+      "p99": 43
+    },
+    {
+      "t": 220,
+      "replies": 1500,
+      "errors": 0,
+      "p50": 7,
+      "p99": 34
+    },
+    {
+      "t": 230,
+      "replies": 1500,
+      "errors": 0,
+      "p50": 7,
+      "p99": 33
+    },
+    {
+      "t": 240,
+      "replies": 1500,
+      "errors": 0,
+      "p50": 9,
+      "p99": 53
+    },
+    {
+      "t": 250,
+      "replies": 1500,
+      "errors": 0,
+      "p50": 8,
+      "p99": 35
+    },
+    {
+      "t": 260,
+      "replies": 1500,
+      "errors": 0,
+      "p50": 9,
+      "p99": 44
+    },
+    {
+      "t": 270,
+      "replies": 1500,
+      "errors": 0,
+      "p50": 9,
+      "p99": 37
+    },
+    {
+      "t": 280,
+      "replies": 1500,
+      "errors": 0,
+      "p50": 9,
+      "p99": 41
+    },
+    {
+      "t": 290,
+      "replies": 1500,
+      "errors": 0,
+      "p50": 9,
+      "p99": 38
+    },
+    {
+      "t": 300,
+      "replies": 1500,
+      "errors": 0,
+      "p50": 9,
+      "p99": 51
+    },
+    {
+      "t": 310,
+      "replies": 1500,
+      "errors": 0,
+      "p50": 9,
+      "p99": 42
+    },
+    {
+      "t": 320,
+      "replies": 1500,
+      "errors": 0,
+      "p50": 10,
+      "p99": 57
+    },
+    {
+      "t": 330,
+      "replies": 1500,
+      "errors": 0,
+      "p50": 9,
+      "p99": 38
+    },
+    {
+      "t": 340,
+      "replies": 1500,
+      "errors": 0,
+      "p50": 10,
+      "p99": 49
+    },
+    {
+      "t": 350,
+      "replies": 1500,
+      "errors": 0,
+      "p50": 9,
+      "p99": 48
+    },
+    {
+      "t": 360,
+      "replies": 1500,
+      "errors": 0,
+      "p50": 10,
+      "p99": 43
+    },
+    {
+      "t": 370,
+      "replies": 1500,
+      "errors": 0,
+      "p50": 9,
+      "p99": 45
+    },
+    {
+      "t": 380,
+      "replies": 1500,
+      "errors": 0,
+      "p50": 9,
+      "p99": 55
+    },
+    {
+      "t": 390,
+      "replies": 1500,
+      "errors": 0,
+      "p50": 10,
+      "p99": 44
+    },
+    {
+      "t": 400,
+      "replies": 1500,
+      "errors": 0,
+      "p50": 10,
+      "p99": 52
+    },
+    {
+      "t": 410,
+      "replies": 1500,
+      "errors": 0,
+      "p50": 10,
+      "p99": 46
+    },
+    {
+      "t": 420,
+      "replies": 1500,
+      "errors": 0,
+      "p50": 12,
+      "p99": 53
+    },
+    {
+      "t": 430,
+      "replies": 1500,
+      "errors": 0,
+      "p50": 11,
+      "p99": 47
+    },
+    {
+      "t": 440,
+      "replies": 1500,
+      "errors": 0,
+      "p50": 11,
+      "p99": 45
+    },
+    {
+      "t": 450,
+      "replies": 1500,
+      "errors": 0,
+      "p50": 11,
+      "p99": 50
+    },
+    {
+      "t": 460,
+      "replies": 1494,
+      "errors": 0,
+      "p50": 11,
+      "p99": 50
+    },
+    {
+      "t": 470,
+      "replies": 1500,
+      "errors": 0,
+      "p50": 11,
+      "p99": 53
+    },
+    {
+      "t": 480,
+      "replies": 1500,
+      "errors": 0,
+      "p50": 11,
+      "p99": 46
+    },
+    {
+      "t": 490,
+      "replies": 1500,
+      "errors": 0,
+      "p50": 11,
+      "p99": 47
+    },
+    {
+      "t": 500,
+      "replies": 1500,
+      "errors": 0,
+      "p50": 11,
+      "p99": 56
+    },
+    {
+      "t": 510,
+      "replies": 1500,
+      "errors": 0,
+      "p50": 11,
+      "p99": 54
+    },
+    {
+      "t": 520,
+      "replies": 1500,
+      "errors": 0,
+      "p50": 12,
+      "p99": 53
+    },
+    {
+      "t": 530,
+      "replies": 1500,
+      "errors": 0,
+      "p50": 13,
+      "p99": 59
+    },
+    {
+      "t": 540,
+      "replies": 1500,
+      "errors": 0,
+      "p50": 13,
+      "p99": 58
+    },
+    {
+      "t": 550,
+      "replies": 1500,
+      "errors": 0,
+      "p50": 13,
+      "p99": 66
+    },
+    {
+      "t": 560,
+      "replies": 1500,
+      "errors": 0,
+      "p50": 14,
+      "p99": 73
+    },
+    {
+      "t": 570,
+      "replies": 1500,
+      "errors": 0,
+      "p50": 12,
+      "p99": 49
+    },
+    {
+      "t": 580,
+      "replies": 1500,
+      "errors": 0,
+      "p50": 13,
+      "p99": 46
+    },
+    {
+      "t": 590,
+      "replies": 1500,
+      "errors": 0,
+      "p50": 12,
+      "p99": 46
+    }
+  ]
+}

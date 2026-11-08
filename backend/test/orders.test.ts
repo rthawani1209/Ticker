@@ -18,6 +18,29 @@ const place = (token: string, payload: object) =>
   b.app.inject({ method: "POST", url: "/v1/orders", headers: auth(token), payload });
 
 describe("orders", () => {
+  it("turns orders away with 503 while the event queue is backed up", async () => {
+    const orders = b.orders as unknown as {
+      maxBacklog: number;
+      enqueue(task: () => Promise<void>): void;
+    };
+    const saved = orders.maxBacklog;
+    orders.maxBacklog = 2;
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    for (let i = 0; i < 3; i++) orders.enqueue(() => held);
+    try {
+      const res = await place(alice.token, { symbol: "NOVA", side: "buy", price: 13_000, qty: 1 });
+      expect(res.statusCode).toBe(503);
+      expect(res.json().error).toBe("busy");
+    } finally {
+      release();
+      orders.maxBacklog = saved;
+      await b.orders.settled();
+    }
+    const ok = await place(alice.token, { symbol: "NOVA", side: "buy", price: 13_000, qty: 1 });
+    expect(ok.statusCode).toBe(201);
+  });
+
   it("rests a limit order on the book", async () => {
     const res = await place(alice.token, { symbol: "nova", side: "buy", price: 13_900, qty: 10 });
     expect(res.statusCode).toBe(201);

@@ -112,6 +112,11 @@ const ORDER_FROM =
 export class OrderService extends EventEmitter {
   // Engine events are applied to the database one at a time, in arrival order.
   private queue: Promise<void> = Promise.resolve();
+  // Engine events waiting to be written. Past maxBacklog new orders are turned away
+  // with a 503 instead of joining a queue that only gets longer: a load test at twice
+  // the gateway's capacity had replies taking 25 s and climbing.
+  private backlog = 0;
+  maxBacklog = 600;
 
   readonly marks: Marks;
 
@@ -132,9 +137,15 @@ export class OrderService extends EventEmitter {
   }
 
   private enqueue(task: () => Promise<void>): void {
-    this.queue = this.queue.then(task).catch((err) => {
-      this.emit("error", err);
-    });
+    this.backlog++;
+    this.queue = this.queue
+      .then(task)
+      .catch((err) => {
+        this.emit("error", err);
+      })
+      .finally(() => {
+        this.backlog--;
+      });
   }
 
   // Resolves once every event received so far has been written.
@@ -151,6 +162,8 @@ export class OrderService extends EventEmitter {
   ): Promise<Order> {
     if (!this.bridge.connected)
       throw new ApiError(503, "exchange_down", "the exchange is not connected");
+    if (this.backlog > this.maxBacklog)
+      throw new ApiError(503, "busy", "the exchange is busy, try again in a moment");
     let id = 0;
     let account = 0;
     await this.tx(async (client) => {

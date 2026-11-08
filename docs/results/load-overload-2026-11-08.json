@@ -1,0 +1,102 @@
+{
+  "date": "2026-11-08T18:32:04.445Z",
+  "what": "orders and cancels over WebSockets from many users at once, send -> gateway reply",
+  "setup": {
+    "users": 200,
+    "orders_per_user_per_second": 2,
+    "seconds": 93,
+    "mix": "half resting limit orders (cancelled after ~2 s), half crossing IOC orders; 1-5 shares; 8 symbols",
+    "same_process": "the gateway and all clients share one Node process; the engine, Postgres and Redis run on the same machine"
+  },
+  "machine": {
+    "cpu": "Intel(R) Xeon(R) Processor @ 2.30GHz",
+    "cores": 4,
+    "node": "v22.22.0",
+    "platform": "linux 6.18.44-fc-v310"
+  },
+  "totals": {
+    "sent": 35799,
+    "accepted": 22592,
+    "rejected_by_rules": 0,
+    "cancels_after_fill": 6177,
+    "errors": 7030,
+    "no_reply": 0,
+    "fills": 21074,
+    "replies_per_second": 309.3,
+    "reasons": {
+      "busy": 7030
+    }
+  },
+  "latency_ms": {
+    "p50": 1121,
+    "p90": 2097,
+    "p99": 2372,
+    "p999": 2502,
+    "max": 2569
+  },
+  "per_10s": [
+    {
+      "t": 0,
+      "replies": 2929,
+      "errors": 871,
+      "p50": 1173,
+      "p99": 2448
+    },
+    {
+      "t": 10,
+      "replies": 3122,
+      "errors": 878,
+      "p50": 1150,
+      "p99": 2410
+    },
+    {
+      "t": 20,
+      "replies": 3158,
+      "errors": 842,
+      "p50": 1130,
+      "p99": 2485
+    },
+    {
+      "t": 30,
+      "replies": 3306,
+      "errors": 694,
+      "p50": 1086,
+      "p99": 2265
+    },
+    {
+      "t": 40,
+      "replies": 3305,
+      "errors": 695,
+      "p50": 1115,
+      "p99": 2366
+    },
+    {
+      "t": 50,
+      "replies": 3205,
+      "errors": 794,
+      "p50": 1120,
+      "p99": 2291
+    },
+    {
+      "t": 60,
+      "replies": 3301,
+      "errors": 699,
+      "p50": 1114,
+      "p99": 2321
+    },
+    {
+      "t": 70,
+      "replies": 3197,
+      "errors": 803,
+      "p50": 1133,
+      "p99": 2315
+    },
+    {
+      "t": 80,
+      "replies": 3246,
+      "errors": 754,
+      "p50": 1092,
+      "p99": 2394
+    }
+  ]
+}

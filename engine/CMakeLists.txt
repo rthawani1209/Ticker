@@ -12,12 +12,19 @@ endif()
 
 option(TICKER_BUILD_TESTS "Build unit tests" ON)
 option(TICKER_BUILD_BENCH "Build benchmarks" ON)
+option(TICKER_FUZZ "Build the libFuzzer target (clang only)" OFF)
 set(TICKER_SANITIZE "" CACHE STRING "Sanitizers to enable, e.g. address,undefined or thread")
 
 add_compile_options(-Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wno-sign-conversion)
 if(TICKER_SANITIZE)
   add_compile_options(-fsanitize=${TICKER_SANITIZE} -fno-omit-frame-pointer)
   add_link_options(-fsanitize=${TICKER_SANITIZE})
+endif()
+
+if(TICKER_FUZZ)
+  # Coverage feedback for libFuzzer in all the engine code, not just the target.
+  add_compile_options(-fsanitize=fuzzer-no-link,address,undefined -fno-omit-frame-pointer)
+  add_link_options(-fsanitize=address,undefined)
 endif()
 
 find_package(Threads REQUIRED)
@@ -90,4 +97,10 @@ if(TICKER_BUILD_BENCH)
   add_executable(latency bench/latency.cpp)
   target_include_directories(latency PRIVATE tests)
   target_link_libraries(latency PRIVATE ticker_core)
+endif()
+
+if(TICKER_FUZZ)
+  add_executable(book_fuzz fuzz/book_fuzz.cpp)
+  target_link_options(book_fuzz PRIVATE -fsanitize=fuzzer)
+  target_link_libraries(book_fuzz PRIVATE ticker_core)
 endif()

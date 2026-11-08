@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Run the same builds and tests as CI before pushing.
 # Usage: scripts/check.sh [--fuzz] [--docker]
-#   --fuzz    adds the 1M-command differential run
+#   --fuzz    adds the 1M-command differential run and a minute of libFuzzer
 #   --docker  builds the images and smoke-tests the stack like the docker CI job
 # clang sanitizer builds need libclang-rt-18-dev (apt install libclang-rt-18-dev); market-sim needs pytest; backend and frontend need
 # Node 22+; backend also needs Postgres and Redis running locally.
@@ -56,6 +56,13 @@ if [[ " $* " == *" --fuzz "* ]]; then
   echo "== differential fuzz (1M commands per seed)"
   TICKER_FUZZ_COMMANDS=1000000 engine/build-check/g++-release/engine_tests \
     --gtest_filter='Differential*' > /dev/null
+  echo "== libFuzzer (60 s)"
+  cmake -S engine -B engine/build-check/fuzz -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+    -DTICKER_FUZZ=ON -DTICKER_BUILD_TESTS=OFF -DTICKER_BUILD_BENCH=OFF > /dev/null
+  cmake --build engine/build-check/fuzz -j --target book_fuzz > /dev/null
+  mkdir -p engine/fuzz/corpus
+  UBSAN_OPTIONS=halt_on_error=1 engine/build-check/fuzz/book_fuzz -max_total_time=60 -max_len=4096 \
+    engine/fuzz/corpus 2> engine/build-check/fuzz/fuzz.log || { tail -40 engine/build-check/fuzz/fuzz.log; exit 1; }
 fi
 
 if [[ " $* " == *" --docker "* ]]; then

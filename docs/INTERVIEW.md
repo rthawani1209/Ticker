@@ -83,6 +83,12 @@ A whole class on campus Wi-Fi shares one public IP. With 10 logins a minute per 
 **How do you compute max drawdown and win rate?**
 Drawdown: walk the equity curve keeping the highest value so far; the drawdown at each point is how far below that peak it is, as a fraction; take the largest. Win rate: replay the fills with the same average-cost function the ledger uses; every fill that reduces a position closes a round trip, and it's a win if the realized profit on that part, minus commission, is positive.
 
+**What happens when too many people trade at once?**
+I load-tested it: 150 simulated users sending 150 orders a second over WebSockets for 10 minutes, with p99 48 ms and no errors (`docs/results/load-2026-11-08.json`). Then I doubled it, and replies went from milliseconds to 25 seconds and kept growing. The gateway writes engine events through one queue, and nothing stopped the queue from growing. Now, once 600 events are waiting, new orders get a 503 "busy". At double the load it serves about 310 a second, turns away the rest, and the wait stays flat around a second. The next step would be one queue per portfolio, since orders from different portfolios don't depend on each other.
+
+**How would you find bugs a unit test wouldn't think of?**
+Two ways, both against a deliberately simple reference order book. Random order flow (20M commands a CI run) must give byte-identical output from both books. And a libFuzzer target feeds raw bytes through the same parser the server uses into both books, under ASan and UBSan, with coverage feedback steering it toward new code paths.
+
 ## Do this yourself (about an hour)
 
 1. Build and run the tests: `cmake -S engine -B engine/build && cmake --build engine/build -j && ctest --test-dir engine/build`.

@@ -1,0 +1,34 @@
+name: codeql
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "17 6 * * 1"
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  analyze:
+    name: codeql (${{ matrix.language }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [c-cpp, javascript-typescript, python]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.language == 'c-cpp' && 'manual' || 'none' }}
+      - name: Build the engine
+        if: matrix.language == 'c-cpp'
+        run: |
+          cmake -S engine -B engine/build -DCMAKE_BUILD_TYPE=Release -DTICKER_BUILD_TESTS=OFF -DTICKER_BUILD_BENCH=OFF
+          cmake --build engine/build -j
+      - uses: github/codeql-action/analyze@v3

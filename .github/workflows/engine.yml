@@ -52,6 +52,35 @@ jobs:
           TICKER_FUZZ_COMMANDS: "1000000"
         run: engine/build/engine_tests --gtest_filter='Differential*'
 
+  libfuzzer:
+    name: libFuzzer (wire bytes -> both books, 5 min)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      # The corpus carries over between runs, so each run starts where the last stopped.
+      - uses: actions/cache@v4
+        with:
+          path: engine/fuzz/corpus
+          key: book-fuzz-${{ github.run_id }}
+          restore-keys: book-fuzz-
+      - run: >-
+          cmake -S engine -B engine/build-fuzz -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DTICKER_FUZZ=ON -DTICKER_BUILD_TESTS=OFF -DTICKER_BUILD_BENCH=OFF
+      - run: cmake --build engine/build-fuzz -j --target book_fuzz
+      - name: Fuzz
+        env:
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: |
+          mkdir -p engine/fuzz/corpus
+          engine/build-fuzz/book_fuzz -max_total_time=300 -max_len=4096 -print_final_stats=1 engine/fuzz/corpus
+      - name: Keep the crashing input
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: book-fuzz-crash
+          path: crash-*
+
   bench:
     name: benchmarks
     runs-on: ubuntu-24.04
