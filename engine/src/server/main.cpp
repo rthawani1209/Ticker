@@ -49,6 +49,15 @@ int main(int argc, char** argv) {
             usage(argv[0]);
     }
 
+    const bool loopback = cfg.host == "127.0.0.1" || cfg.host == "::1" || cfg.host == "localhost";
+    if (cfg.token == 0 && !loopback) {
+        std::fprintf(stderr,
+                     "ticker-engine: set --token or TICKER_TOKEN to listen on %s; without it anyone who can "
+                     "reach the port can trade for any account\n",
+                     cfg.host.c_str());
+        return 2;
+    }
+
     // Block the signals before any thread starts so only sigwait below sees them.
     sigset_t sigs;
     sigemptyset(&sigs);

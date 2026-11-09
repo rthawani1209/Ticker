@@ -60,6 +60,13 @@ public:
 
     std::size_t size() const { return size_; }
 
+    // Calls f(key, value) for every entry, in no particular order.
+    template <typename F>
+    void for_each(F&& f) const {
+        for (const Slot& s : slots_)
+            if (s.key != 0) f(s.key, s.value);
+    }
+
 private:
     struct Slot {
         std::uint64_t key = 0;

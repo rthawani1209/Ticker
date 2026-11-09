@@ -375,6 +375,22 @@ private:
     }
 
     void on_cancel(const Command& c, std::vector<Event>& out) {
+        if (c.order_id == 0) {  // every order of the account, oldest first
+            std::vector<OrderId> ids;
+            for (Side s : {Side::Buy, Side::Sell})
+                for (auto& [p, q] : side_map(s))
+                    for (auto& o : q)
+                        if (o.account == c.account) ids.push_back(o.id);
+            for (auto& st : stops_)
+                if (st.o.account == c.account) ids.push_back(st.o.id);
+            std::sort(ids.begin(), ids.end());
+            for (OrderId id : ids) {
+                Command one = c;
+                one.order_id = id;
+                on_cancel(one, out);
+            }
+            return;
+        }
         if (auto st = find_stop(c.order_id); st != stops_.end()) {
             if (st->o.account != c.account) return reject(c, RejectReason::NotOwner, out);
             Event e{};

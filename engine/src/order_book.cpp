@@ -345,6 +345,22 @@ void OrderBook::execute(const Incoming& in, std::vector<Event>& out) {
 }
 
 void OrderBook::on_cancel(const Command& cmd, std::vector<Event>& out) {
+    if (cmd.order_id == 0) {
+        // Order id 0 cancels every order the account has in this book, resting or
+        // waiting, oldest first. The market simulator sends it when it starts, to pull
+        // quotes a previous run left behind. Rare, so a scan of the map is fine.
+        std::vector<OrderId> ids;
+        by_id_.for_each([&](std::uint64_t id, const Order* o) {
+            if (o->account == cmd.account) ids.push_back(id);
+        });
+        std::sort(ids.begin(), ids.end());
+        Command one = cmd;
+        for (OrderId id : ids) {
+            one.order_id = id;
+            on_cancel(one, out);
+        }
+        return;
+    }
     Order* o = by_id_.find(cmd.order_id);
     if (!o) return reject(cmd, RejectReason::UnknownOrder, out);
     if (o->account != cmd.account) return reject(cmd, RejectReason::NotOwner, out);

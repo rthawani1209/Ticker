@@ -10,6 +10,7 @@ import sys
 
 from .scenarios import available, load
 from .redis_news import RedisNews
+from .client import EngineError
 from .sim import Simulator
 
 
@@ -51,7 +52,21 @@ def main() -> int:
         sim = Simulator(scenario, seed=args.seed, news_out=news_out, on_headline=redis_news)
         await sim.connect(args.host, args.port, args.token)
         try:
-            await sim.run(args.duration)
+            while True:
+                await sim.run(args.duration)
+                if not sim.client.closed.is_set():
+                    break  # ran for the whole duration
+                # The engine went away. Keep trying: a redeploy takes a few seconds.
+                delay = 1.0
+                while True:
+                    await asyncio.sleep(delay)
+                    try:
+                        await sim.reconnect(args.host, args.port, args.token)
+                        logging.info("reconnected to the engine")
+                        break
+                    except (OSError, EngineError) as err:
+                        logging.warning("engine not back yet: %s", err)
+                        delay = min(delay * 2, 15.0)
         finally:
             logging.info("final: %s", sim.report())
             await sim.client.close()

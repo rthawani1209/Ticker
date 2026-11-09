@@ -24,6 +24,7 @@ log = logging.getLogger(__name__)
 
 TICK_S = 0.05
 FIRST_BOT_ACCOUNT = 900_001  # well away from real user accounts
+BOT_ACCOUNTS_TO_SWEEP = 256  # more than any scenario makes
 PRIVATE = {p.EventType.ACK, p.EventType.REJECT, p.EventType.FILL, p.EventType.CANCELLED,
            p.EventType.REPLACED, p.EventType.TRIGGERED}
 
@@ -75,16 +76,38 @@ class Simulator:
         for _ in range(counts.news_traders):
             add("news_trader", ids)
 
-    async def connect(self, host: str, port: int, token: int) -> None:
+    async def reconnect(self, host: str, port: int, token: int) -> None:
+        """Logs on again after the engine went away (a restart or a redeploy).
+
+        The engine replays its journal, so the bots' old quotes come back on the book.
+        connect() pulls them, and the bots start quoting afresh. The cancels' replies reach
+        this new session because the engine sends events for a gone session to the proxy
+        that replaced it, so the bots forget those orders too.
+        """
+        self.client = EngineClient(self.on_message)
+        self.ctx.submit = self.client.send
+        self.market = Market()
+        self.ctx.market = self.market
+        for bot in self.bots:
+            bot.pending.clear()
+        await self.connect(host, port, token, keep_fair_values=True)
+
+    async def connect(self, host: str, port: int, token: int, keep_fair_values: bool = False) -> None:
         ack = await self.client.connect(host, port, flags=p.PROXY | p.MARKET_DATA, token=token)
         log.info("connected as session %d, engine lists %d symbols", ack.session, ack.symbols)
+        # Pull every bot quote still on the book, from this run or one before it (the
+        # engine keeps them across restarts). Order id 0 cancels all of an account's orders.
+        for account in range(FIRST_BOT_ACCOUNT, FIRST_BOT_ACCOUNT + BOT_ACCOUNTS_TO_SWEEP):
+            for s in SYMBOLS[: ack.symbols]:
+                self.client.send(p.cancel(s.id, 0, account=account))
         for s in SYMBOLS[: ack.symbols]:
             self.client.send(p.symbol_msg(p.MsgType.SUBSCRIBE, s.id))
         await self.client.drain()
         await asyncio.sleep(0.2)  # let the snapshots arrive
         # Start each company's true value at its current price, not the listing price.
-        for s in SYMBOLS:
-            self.fair.values[s.id] = float(self.market.books[s.id].last)
+        if not keep_fair_values:
+            for s in SYMBOLS:
+                self.fair.values[s.id] = float(self.market.books[s.id].last)
 
     # ---- main loop ----------------------------------------------------------------
 
@@ -92,9 +115,12 @@ class Simulator:
         duration = self.scenario.duration_s if duration_s is None else duration_s
         if not self.bots:
             self.make_bots()
-        self._start = time.monotonic()
-        last = 0.0
-        next_report = 10.0
+        # The clock keeps running across a reconnect, so bots' timers and the
+        # duration carry on where they were.
+        if not self._start:
+            self._start = time.monotonic()
+        last = time.monotonic() - self._start
+        next_report = (last // 10 + 1) * 10
         while not self.client.closed.is_set():
             now = time.monotonic() - self._start
             dt = now - last
@@ -146,7 +172,7 @@ class Simulator:
             self.news_out.write(json.dumps(item.to_json()) + "\n")
             self.news_out.flush()
         if self.on_headline is not None:
-            self.on_headline(item.to_json())
+            self.on_headline(public_headline(item))
         for bot in self.bots:
             bot.on_news(item)
 
@@ -183,3 +209,11 @@ class Simulator:
         top = ", ".join(f"{k.lower()} {v}" for k, v in rej.most_common(3))
         rej_text = f"{sum(rej.values())} ({top})" if rej else "0"
         return f"orders {sent}  trades {self.trades}  rejects {rej_text}  halts {self.halts} | {prices}"
+
+
+def public_headline(item: NewsItem) -> dict:
+    """What everyone sees. The price impact is how far the hidden fair value jumps, so
+    showing it would let any bot trade on it before the market makers catch up."""
+    d = item.to_json()
+    d.pop("impact_bps", None)
+    return d

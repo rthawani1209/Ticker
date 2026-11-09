@@ -23,6 +23,16 @@ struct SymbolConfig {
     std::uint64_t halt_ns = 300'000'000'000;
 };
 
+// The highest price a symbol's book can hold, from its starting price. The book keeps an
+// array slot per tick, so the ceiling sets its memory: 8x the start (at least $655.36),
+// capped at what the bit tree can index ($2,621.44). The backend uses the same rule.
+constexpr Price price_ceiling(Price ref_price) {
+    constexpr Price floor = 1 << 16;
+    constexpr Price cap = 1 << 18;
+    const Price eight_x = ref_price * 8;
+    return eight_x < floor ? floor : eight_x > cap ? cap : eight_x;
+}
+
 std::vector<SymbolConfig> default_symbols();
 
 }  // namespace ticker

@@ -279,8 +279,9 @@ void Server::on_message(Connection& c, const wire::Header& h, const std::uint8_t
     if (h.type == MsgType::Logon) {
         if (c.logged_in) return fail(c, ErrorCode::AlreadyLoggedIn);
         auto m = read_as<Logon>(msg);
-        bool privileged = m.flags & (kProxy | kAdmin);
-        if (privileged && cfg_.token != 0 && m.token != cfg_.token) return fail(c, ErrorCode::BadToken);
+        // With a token set, every logon needs it, not only proxy and admin ones: an
+        // account session could otherwise cancel or trade for any portfolio.
+        if (cfg_.token != 0 && m.token != cfg_.token) return fail(c, ErrorCode::BadToken);
         c.account = m.account;
         c.flags = m.flags & (kMarketData | kProxy | kAdmin);
         c.logged_in = true;
@@ -397,10 +398,15 @@ void Server::deliver(const Event& e) {
             if (c->flags & wire::kMarketData) queue(*c, &msg, sizeof msg);
         return;
     }
-    // Replies for a session that has since disconnected are dropped. Its orders
-    // stay on the book.
     auto it = by_session_.find(e.session);
-    if (it != by_session_.end()) queue(*it->second, &msg, sizeof msg);
+    if (it != by_session_.end()) return queue(*it->second, &msg, sizeof msg);
+    // The session that placed the order is gone: a gateway that restarted, or this
+    // engine restarting and recovering the book from its journal. Its orders stay on
+    // the book, so later fills and cancels go to every proxy session (the gateways and
+    // the simulator), which each pick out the accounts they own. Dropping them would
+    // leave a gateway's ledger out of step with the book.
+    for (auto& [id, c] : by_session_)
+        if (c->flags & wire::kProxy) queue(*c, &msg, sizeof msg);
 }
 
 void Server::queue(Connection& c, const void* data, std::size_t n) {

@@ -41,6 +41,9 @@ public:
             c.type = CmdType::Cancel;
             c.order_id = pick_live();
             if (rng_() % 10 == 0) c.account = AccountId(1 + rng_() % 6);  // sometimes not the owner
+            // Now and then, cancel everything the account has. Not in the few-ticks-wide
+            // low-price suite: wiping quotes there leaves the book too thin to trade.
+            if (chaos_ && cfg_.ref_price > 100 && cl_ % 400 == 0) c.order_id = 0;
         } else if (roll < 30 && !live_.empty()) {
             c.type = CmdType::Replace;
             c.order_id = pick_live();

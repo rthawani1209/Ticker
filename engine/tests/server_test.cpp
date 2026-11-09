@@ -122,7 +122,7 @@ TEST(ServerTest, HaltNeedsAdmin) {
     server.start();
 
     TestClient user(server.port());
-    ASSERT_TRUE(user.logon(1));
+    ASSERT_TRUE(user.logon(1, 0, 1234));
     user.symbol_msg(MsgType::Halt, 0);
     EXPECT_EQ(error_code(user), std::uint32_t(wire::ErrorCode::NotAllowed));
 
@@ -156,7 +156,7 @@ TEST(ServerTest, ProxyNeedsTokenAndCanTradeForAnyAccount) {
 
     // A normal session can't pick its account.
     TestClient user(server.port());
-    ASSERT_TRUE(user.logon(8));
+    ASSERT_TRUE(user.logon(8, 0, 1234));
     user.new_order(0, Side::Sell, 10000, 1, 6, OrdType::Limit, TIF::GTC, 555);
     auto ack2 = user.wait_event(is(EventType::Ack));
     ASSERT_TRUE(ack2);
@@ -263,11 +263,12 @@ TEST(ServerTest, PipelinedBurstIsFullyAcked) {
 TEST(ServerTest, ListensOnIpv6AndIpv4) {
     auto cfg = test_config();
     cfg.host = "::";
+    cfg.token = 99;
     Server server(cfg);
     server.start();  // falls back to IPv4 where there's no IPv6
 
     TestClient v4(server.port());  // 127.0.0.1 into the "::" listener
-    EXPECT_TRUE(v4.logon(7));
+    EXPECT_TRUE(v4.logon(7, 0, 99));
 
     int fd = ::socket(AF_INET6, SOCK_STREAM, 0);
     if (fd < 0) GTEST_SKIP() << "no IPv6 on this machine";
@@ -277,4 +278,46 @@ TEST(ServerTest, ListensOnIpv6AndIpv4) {
     addr.sin6_addr = in6addr_loopback;
     EXPECT_EQ(::connect(fd, reinterpret_cast<sockaddr*>(&addr), sizeof addr), 0);
     ::close(fd);
+}
+
+TEST(ServerTest, WithATokenEveryLogonNeedsIt) {
+    auto cfg = test_config();
+    cfg.token = 1234;
+    Server server(cfg);
+    server.start();
+
+    // A plain account session without the token could otherwise cancel anyone's orders.
+    TestClient c(server.port());
+    auto m = wire::make<wire::Logon>(MsgType::Logon);
+    m.account = 7;
+    c.send(m);
+    EXPECT_EQ(error_code(c), std::uint32_t(wire::ErrorCode::BadToken));
+
+    TestClient ok(server.port());
+    EXPECT_TRUE(ok.logon(7, 0, 1234));
+}
+
+TEST(ServerTest, EventsForADisconnectedGatewayGoToTheProxyThatReplacedIt) {
+    auto cfg = test_config();
+    cfg.token = 1234;
+    Server server(cfg);
+    server.start();
+
+    {
+        TestClient old_gateway(server.port());
+        ASSERT_TRUE(old_gateway.logon(0, wire::kProxy, 1234));
+        old_gateway.new_order(0, Side::Buy, 10000, 7, 1, OrdType::Limit, TIF::GTC, 555);
+        ASSERT_TRUE(old_gateway.wait_event(is(EventType::Ack)));
+    }  // disconnects; the bid stays on the book
+
+    TestClient gateway(server.port());
+    ASSERT_TRUE(gateway.logon(0, wire::kProxy, 1234));
+    TestClient seller(server.port());
+    ASSERT_TRUE(seller.logon(9, 0, 1234));
+    seller.new_order(0, Side::Sell, 10000, 7, 2, OrdType::Limit, TIF::IOC);
+
+    auto fill = gateway.wait_event([](const Event& e) { return e.type == EventType::Fill && e.account == 555; });
+    ASSERT_TRUE(fill);
+    EXPECT_EQ(fill->qty, 7u);
+    EXPECT_EQ(fill->cl_ord_id, 1u);
 }

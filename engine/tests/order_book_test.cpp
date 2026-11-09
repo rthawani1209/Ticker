@@ -478,3 +478,48 @@ TEST_F(BreakerTest, FokNeverTripsHalfway) {
     EXPECT_TRUE(of_type(evs, EventType::Trade).empty());
     EXPECT_FALSE(book.halted());
 }
+
+TEST(PriceCeiling, LeavesRoomForEachSymbolToRally) {
+    // 8x the starting price, at least $655.36 and at most what the bit tree can index.
+    EXPECT_EQ(price_ceiling(1'200), 1 << 16);
+    EXPECT_EQ(price_ceiling(14'000), 112'000);
+    EXPECT_EQ(price_ceiling(40'000), 1 << 18);
+    for (const auto& s : default_symbols()) EXPECT_GE(s.max_price, s.ref_price * 2) << s.name;
+
+    // ORBT starts at $310; a book built from its config takes a $700 bid once it trades there.
+    SymbolConfig c = default_symbols()[2];
+    ASSERT_EQ(c.name, "ORBT");
+    c.ref_price = 70'000;
+    c.max_orders = 8;
+    OrderBook book{2, c};
+    std::vector<Event> out;
+    book.process(limit(Side::Buy, 70'000, 1), out);
+    EXPECT_EQ(out.at(0).type, EventType::Ack);
+}
+
+TEST_F(BookTest, OrderIdZeroCancelsEverythingTheAccountHas) {
+    const OrderId a = place(Side::Buy, 990, 5, 7);
+    place(Side::Buy, 995, 3, 8);  // someone else's
+    const OrderId b = place(Side::Sell, 1010, 4, 7);
+    Command stop = limit(Side::Sell, 0, 2, 7);
+    stop.ord_type = OrdType::Stop;
+    stop.stop_price = 950;
+    EXPECT_EQ(send(stop).front().type, EventType::Ack);
+
+    Command all{};
+    all.type = CmdType::Cancel;
+    all.account = 7;
+    all.order_id = 0;
+    auto evs = send(all);
+    std::vector<OrderId> cancelled;
+    for (const auto& e : evs)
+        if (e.type == EventType::Cancelled) cancelled.push_back(e.order_id);
+    ASSERT_EQ(cancelled.size(), 3u);
+    EXPECT_EQ(cancelled[0], a);
+    EXPECT_EQ(cancelled[1], b);
+    EXPECT_EQ(book.best_bid(), 995);
+    EXPECT_EQ(book.best_ask(), 0);
+
+    // Nothing left: no events, and no reject either.
+    EXPECT_TRUE(send(all).empty());
+}

@@ -25,12 +25,12 @@
 namespace ticker {
 
 struct ServerConfig {
-    std::string host = "0.0.0.0";
+    std::string host = "127.0.0.1";  // the Dockerfile passes "::"
     std::uint16_t port = 9100;  // 0 picks a free port
     unsigned shards = 2;
     std::string journal_dir;  // empty = no journal, nothing survives a restart
     bool fsync = false;       // fsync the journal after every batch, not just write()
-    std::uint64_t token = 0;  // required for proxy/admin logons when non-zero
+    std::uint64_t token = 0;  // when non-zero, every logon must carry it
     std::vector<SymbolConfig> symbols = default_symbols();
 };
 

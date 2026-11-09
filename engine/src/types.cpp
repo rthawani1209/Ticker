@@ -55,6 +55,7 @@ std::vector<SymbolConfig> default_symbols() {
         SymbolConfig c;
         c.name = name;
         c.ref_price = ref;
+        c.max_price = price_ceiling(ref);
         return c;
     };
     return {
