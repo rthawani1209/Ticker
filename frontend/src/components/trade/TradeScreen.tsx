@@ -6,7 +6,7 @@ import { AppHeader } from "@/components/app/AppHeader";
 import { PriceCell } from "@/components/ui/PriceCell";
 import { leagues, type League, type NewOrder, type Session, type Side } from "@/lib/api";
 import { formatChange, formatPrice } from "@/lib/format";
-import { queryParam } from "@/lib/query";
+import { useQueryParam } from "@/lib/query";
 import type { Ticket } from "@/lib/ticket";
 
 import { Blotter } from "./Blotter";
@@ -33,9 +33,14 @@ export function TradeScreen({ session }: { session: Session }) {
   const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
   const qtyInput = useRef<HTMLInputElement>(null);
   // Which league's portfolio to trade; /trade?league=ID opens straight into one.
-  const [league, setLeague] = useState<number | undefined>(
-    () => Number(queryParam("league")) || undefined,
-  );
+  const urlLeague = Number(useQueryParam("league")) || undefined;
+  const [league, setLeague] = useState<number | undefined>(urlLeague);
+  // Following another ?league= link while this screen is open switches to it.
+  const [linked, setLinked] = useState(urlLeague);
+  if (linked !== urlLeague) {
+    setLinked(urlLeague);
+    setLeague(urlLeague);
+  }
   const [leagueList, setLeagueList] = useState<League[]>([]);
   const t = useTrading(session.accessToken, symbol, league);
 
@@ -67,7 +72,7 @@ export function TradeScreen({ session }: { session: Session }) {
       const r = await t.placeOrder(order);
       if (!r.ok) return r.message ?? "rejected";
       if (r.order?.status === "rejected")
-        return `Rejected: ${r.order.rejectReason?.replace("_", " ")}`;
+        return `Rejected: ${r.order.rejectReason?.replaceAll("_", " ")}`;
       return null;
     },
     [t],
@@ -99,9 +104,14 @@ export function TradeScreen({ session }: { session: Session }) {
         );
         if (open.length === 0) return;
         e.preventDefault();
-        Promise.all(open.map((o) => t.cancelOrder(o.id))).then(() =>
-          setNotice({ ok: true, text: `Cancelled ${open.length} open ${symbol} order(s)` }),
-        );
+        Promise.all(open.map((o) => t.cancelOrder(o.id))).then((replies) => {
+          const failed = replies.filter((r) => !r.ok);
+          setNotice(
+            failed.length === 0
+              ? { ok: true, text: `Cancelled ${open.length} open ${symbol} order(s)` }
+              : { ok: false, text: `${failed.length} not cancelled: ${failed[0]!.message}` },
+          );
+        });
         return;
       }
       if (typing) return;
@@ -187,7 +197,11 @@ export function TradeScreen({ session }: { session: Session }) {
             portfolio={t.portfolio}
             orders={t.orders}
             fills={t.fills}
-            onCancel={(id) => t.cancelOrder(id)}
+            onCancel={(id) =>
+              t.cancelOrder(id).then((r) => {
+                if (!r.ok) setNotice({ ok: false, text: `Not cancelled: ${r.message}` });
+              })
+            }
             onPick={pick}
           />
         </div>

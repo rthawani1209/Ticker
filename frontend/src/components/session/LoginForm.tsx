@@ -15,9 +15,17 @@ type Mode = "signin" | "register";
 const modeFromUrl = (): Mode =>
   new URLSearchParams(window.location.search).get("mode") === "register" ? "register" : "signin";
 
+// Where to go after signing in: ?next=/leagues?join=CODE from an invite link, or the
+// trade screen. Only paths on this site, so the link can't send people elsewhere.
+function nextPath(): string {
+  const next = new URLSearchParams(window.location.search).get("next");
+  return next && next.startsWith("/") && !next.startsWith("//") ? next : "/trade";
+}
+
 export function LoginForm() {
   const router = useRouter();
-  const { start } = useSession();
+  const { start, session } = useSession();
+  const guestToken = session?.user.role === "guest" ? session.accessToken : undefined;
   const initial = useSyncExternalStore(
     () => () => {},
     modeFromUrl,
@@ -38,10 +46,10 @@ export function LoginForm() {
     try {
       await start(() =>
         mode === "register"
-          ? auth.register(email, String(f.get("username")), password)
+          ? auth.register(email, String(f.get("username")), password, guestToken)
           : auth.login(email, password),
       );
-      router.push("/trade");
+      router.push(nextPath());
     } catch (err) {
       setError((err as Error).message);
       setBusy(false);

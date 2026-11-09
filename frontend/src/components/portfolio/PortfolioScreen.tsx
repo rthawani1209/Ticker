@@ -17,7 +17,7 @@ import {
 } from "@/lib/api";
 import { direction, formatMoney, formatPrice } from "@/lib/format";
 import { formatPct } from "@/lib/league";
-import { queryParam } from "@/lib/query";
+import { useQueryParam } from "@/lib/query";
 
 import { EquityChart } from "./EquityChart";
 import styles from "./PortfolioScreen.module.css";
@@ -39,9 +39,14 @@ function PortfolioScreen({ session }: { session: Session }) {
   const token = session.accessToken;
   const [leagues, setLeagues] = useState<League[]>([]);
   // undefined = practice; /portfolio?league=ID opens that league
-  const [league, setLeague] = useState<number | undefined>(
-    () => Number(queryParam("league")) || undefined,
-  );
+  const urlLeague = Number(useQueryParam("league")) || undefined;
+  const [league, setLeague] = useState<number | undefined>(urlLeague);
+  // Following another ?league= link while this screen is open switches to it.
+  const [linked, setLinked] = useState(urlLeague);
+  if (linked !== urlLeague) {
+    setLinked(urlLeague);
+    setLeague(urlLeague);
+  }
   const [data, setData] = useState<Data | null>(null);
   const [error, setError] = useState<string | null>(null);
 

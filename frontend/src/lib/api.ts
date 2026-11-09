@@ -240,9 +240,11 @@ export const auth = {
   guest: () => call<Session>("/v1/auth/guest", { method: "POST" }),
   login: (email: string, password: string) =>
     call<Session>("/v1/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }),
-  register: (email: string, username: string, password: string) =>
+  // A guest's token turns the guest into this account, portfolio and all.
+  register: (email: string, username: string, password: string, guestToken?: string) =>
     call<Session>("/v1/auth/register", {
       method: "POST",
+      token: guestToken,
       body: JSON.stringify({ email, username, password }),
     }),
   logout: () => call<void>("/v1/auth/logout", { method: "POST" }),

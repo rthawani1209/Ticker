@@ -34,6 +34,8 @@ export interface Reply {
 // your orders changes.
 export function useTrading(token: string, symbol: string, league?: number) {
   const [connected, setConnected] = useState(false);
+  // The gateway says whether it can reach the exchange; orders fail while it can't.
+  const [exchangeUp, setExchangeUp] = useState(true);
   const [symbols, setSymbols] = useState<SymbolSummary[]>([]);
   const [book, setBook] = useState<Depth>(EMPTY);
   const [trades, setTrades] = useState<Trade[]>([]);
@@ -105,10 +107,13 @@ export function useTrading(token: string, symbol: string, league?: number) {
     };
 
     const connect = () => {
-      const socket = new WebSocket(`${WS_URL}?token=${encodeURIComponent(token)}`);
+      const socket = new WebSocket(WS_URL);
       ws.current = socket;
       socket.onopen = () => {
         setConnected(true);
+        // Signs in first (the server handles messages in order). Not a ?token= query
+        // param, which would end up in access logs. A refreshed token reconnects.
+        socket.send(JSON.stringify({ op: "auth", token }));
         for (const channel of [`book:${symbol}`, `trades:${symbol}`, "me:orders"]) {
           socket.send(JSON.stringify({ op: "subscribe", channel }));
         }
@@ -124,7 +129,9 @@ export function useTrading(token: string, symbol: string, league?: number) {
           replies.delete(data.ref);
           return;
         }
-        if (channel === `book:${symbol}`) {
+        if (channel === "exchange") {
+          setExchangeUp(Boolean(data.up));
+        } else if (channel === `book:${symbol}`) {
           if (data.snapshot) setBook({ bids: data.bids, asks: data.asks });
           else setBook((b) => applyLevel(b, data.side, data.price, data.qty));
         } else if (channel === `trades:${symbol}`) {
@@ -174,7 +181,7 @@ export function useTrading(token: string, symbol: string, league?: number) {
   const cancelOrder = useCallback((id: number) => request({ op: "cancel", id }), [request]);
 
   return {
-    connected,
+    connected: connected && exchangeUp,
     symbols,
     book,
     trades,

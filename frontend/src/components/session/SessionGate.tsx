@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/Button";
@@ -16,6 +17,10 @@ export function SessionGate({ children }: { children: (session: Session) => Reac
   const { status, session, start } = useSession();
   const [error, setError] = useState<string | null>(null);
   const tried = useRef(false);
+  // Signing in comes back here, so an invite link (/leagues?join=CODE) still works.
+  const query = useSearchParams().toString();
+  const here = usePathname() + (query ? `?${query}` : "");
+  const login = `/login?next=${encodeURIComponent(here)}`;
 
   const startGuest = () =>
     start(auth.guest).catch((e: Error) => setError(e.message || "couldn't reach the market"));
@@ -45,7 +50,8 @@ export function SessionGate({ children }: { children: (session: Session) => Reac
             Start with $100k
           </Button>
           <p className="mono">
-            Have an account? <Link href="/login">Sign in</Link>
+            Have an account? <Link href={login}>Sign in</Link> or{" "}
+            <Link href={`${login}&mode=register`}>create one</Link>
           </p>
           {error && (
             <p className={`mono ${styles.error}`} role="alert">

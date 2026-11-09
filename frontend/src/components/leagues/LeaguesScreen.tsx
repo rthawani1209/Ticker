@@ -9,7 +9,7 @@ import { SessionGate } from "@/components/session/SessionGate";
 import { Button } from "@/components/ui/Button";
 import { ApiError, leagues as api, type League, type Session, type Standing } from "@/lib/api";
 import { direction, formatMoney } from "@/lib/format";
-import { queryParam } from "@/lib/query";
+import { useQueryParam } from "@/lib/query";
 import { codeFrom, EMPTY_FORM, formatPct, inviteLink, readLeagueForm } from "@/lib/league";
 
 import { ClassTools, MyAssignments } from "./ClassTools";
@@ -34,7 +34,13 @@ function LeaguesScreen({ session }: { session: Session }) {
   const [selected, setSelected] = useState<number | null>(null);
   const [creating, setCreating] = useState(false);
   // An invite link lands here as /leagues?join=CODE.
-  const [joinCode, setJoinCode] = useState(() => queryParam("join") ?? "");
+  const urlJoin = useQueryParam("join");
+  const [joinCode, setJoinCode] = useState(urlJoin ?? "");
+  const [linked, setLinked] = useState(urlJoin);
+  if (linked !== urlJoin) {
+    setLinked(urlJoin);
+    if (urlJoin) setJoinCode(urlJoin);
+  }
   const [joinError, setJoinError] = useState<string | null>(null);
 
   const reload = useCallback(
@@ -81,8 +87,13 @@ function LeaguesScreen({ session }: { session: Session }) {
           </div>
           {guest ? (
             <p className={styles.guest}>
-              Leagues need an account. <Link href="/login?mode=register">Save your account</Link> to
-              create one or join with a code.
+              Leagues need an account.{" "}
+              <Link
+                href={`/login?mode=register&next=${encodeURIComponent(urlJoin ? `/leagues?join=${urlJoin}` : "/leagues")}`}
+              >
+                Save your account
+              </Link>{" "}
+              to create one or join with a code.
             </p>
           ) : (
             <div className={styles.actions}>
@@ -228,7 +239,12 @@ function LeagueDetail({ token, league, me }: { token: string; league: League; me
   const rules = [
     `${formatMoney(league.startingCash)} start`,
     league.commissionCents || league.commissionBps
-      ? `${formatMoney(league.commissionCents)}${league.commissionBps ? ` + ${league.commissionBps / 100}%` : ""} per fill`
+      ? [
+          league.commissionCents ? `${formatMoney(league.commissionCents)} per order` : "",
+          league.commissionBps ? `${league.commissionBps / 100}% of each fill` : "",
+        ]
+          .filter(Boolean)
+          .join(" + ")
       : "no commission",
     league.allowShort ? `shorting on (${league.marginBps / 100}% margin)` : "no shorting",
     league.maxPosition ? `max ${league.maxPosition.toLocaleString("en-US")} shares` : null,

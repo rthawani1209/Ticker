@@ -141,7 +141,7 @@
   }
 
   .conn,
-  .who {
+  .who > span {
     display: none;
   }
 }
