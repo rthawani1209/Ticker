@@ -50,12 +50,19 @@ export function toLeague(r: any): League {
   };
 }
 
+// The flat part is charged once per order, on its first fill, and the percentage on
+// every fill. Charging the flat fee per fill let a seller drain a buyer's cash by
+// filling a big bid one share at a time.
 export function commission(
   league: Pick<League, "commissionCents" | "commissionBps">,
   price: number,
   qty: number,
+  firstFill = true,
 ): number {
-  return league.commissionCents + Math.round((price * qty * league.commissionBps) / 10_000);
+  return (
+    (firstFill ? league.commissionCents : 0) +
+    Math.round((price * qty * league.commissionBps) / 10_000)
+  );
 }
 
 // Applies one trade (dq > 0 bought, dq < 0 sold) to a position.
@@ -200,7 +207,7 @@ export async function checkOrder(
       portfolio.id,
     ]),
     client.query(
-      `SELECT symbol_id, side, type, price, stop_price, leaves, parent_id FROM orders
+      `SELECT symbol_id, side, type, price, stop_price, leaves, filled_qty, parent_id FROM orders
        WHERE portfolio_id = $1 AND status IN ('pending', 'open', 'partially_filled')`,
       [portfolio.id],
     ),
@@ -229,6 +236,8 @@ export async function checkOrder(
       },
       marks,
     );
+    // Commission still to come on this order, so fills can't take cash below zero.
+    reserved += commission(league, px, r.leaves, r.filled_qty === 0);
     if (r.side === "buy") {
       reserved += r.leaves * px;
       openBuys.set(r.symbol_id, (openBuys.get(r.symbol_id) ?? 0) + r.leaves);

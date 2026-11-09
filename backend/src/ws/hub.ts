@@ -5,11 +5,17 @@
 //   status         halts and resumes
 //   news           headlines from the market simulator
 //   me:orders      your order updates and fills (needs a token)
+// Every socket also gets {"channel":"exchange","data":{"up":true|false}} on connect and
+// whenever this gateway loses or regains the engine, so the app can say when trading is down.
 //
 // Signed-in clients can also trade over the socket, with the same rules as REST:
 //   {"op":"order","ref":"a1","order":{...same body as POST /v1/orders}}  -> {"channel":"order","data":{"ref","order"}}
 //   {"op":"cancel","ref":"a2","id":123}                                  -> {"channel":"cancel","data":{"ref","order"}}
 // Failures come back on the "error" channel with the same ref.
+//
+// Sign in by sending {"op":"auth","token":...} first (a ?token= query param works too,
+// but ends up in access logs). Access tokens are short-lived: trading stops when the
+// token expires, and the client sends a fresh one with another "auth" message.
 //
 // Public market data goes through the fan-out (see fanout.ts), so any number of
 // gateways can serve the same feed. Private order updates come straight from this
@@ -26,6 +32,13 @@ import type { Order } from "../orders.js";
 
 const MAX_SUBSCRIPTIONS = 50;
 const MAX_BUFFERED = 1 << 20; // drop clients that stop reading
+// Flood limits. A browser tab sends a handful of messages a minute, so these only bite
+// scripts. Going over the message rate closes the socket.
+const MESSAGES_PER_SECOND = 20;
+const MESSAGE_BURST = 60;
+const SNAPSHOTS_PER_10S = 10; // full book snapshots, the expensive reply
+const SOCKETS_PER_USER = 8;
+const SOCKETS_PER_IP = 100; // a whole class can sit behind one campus IP
 
 const ClientMsg = z.object({
   op: z.enum(["subscribe", "unsubscribe", "auth", "ping", "order", "cancel"]),
@@ -41,13 +54,37 @@ const ORDERS_PER_SECOND = 20; // same as the REST order limit
 interface Client {
   ws: WebSocket;
   userId: number | null;
+  expiresAt: number; // ms; the access token's expiry
   channels: Set<string>;
-  sent: number[]; // times of recent order/cancel messages, for the rate limit
+  tokens: number; // message budget, refilled at MESSAGES_PER_SECOND
+  refilledAt: number;
+  snapshots: number[]; // times of recent book snapshots
+}
+
+// Times of recent order/cancel messages per user, across all their sockets.
+function withinRate(recent: Map<number, number[]>, userId: number, now: number): boolean {
+  const times = (recent.get(userId) ?? []).filter((t) => now - t < 1000);
+  if (times.length >= ORDERS_PER_SECOND) {
+    recent.set(userId, times);
+    return false;
+  }
+  times.push(now);
+  recent.set(userId, times);
+  return true;
 }
 
 export default async function wsRoutes(app: FastifyInstance) {
   const { bridge, config, db, fanout, orders, symbols, symbolsByTicker, tokens } = app.deps;
   const subscribers = new Map<string, Set<Client>>();
+  const clients = new Set<Client>();
+  const recentOrders = new Map<number, number[]>();
+  const socketsByUser = new Map<number, number>();
+  const socketsByIp = new Map<string, number>();
+  const bump = <K>(m: Map<K, number>, k: K, by: number) => {
+    const n = (m.get(k) ?? 0) + by;
+    if (n > 0) m.set(k, n);
+    else m.delete(k);
+  };
 
   const send = (c: Client, channel: string, data: unknown) => {
     if (c.ws.readyState !== c.ws.OPEN) return;
@@ -91,8 +128,32 @@ export default async function wsRoutes(app: FastifyInstance) {
     }
   };
   if (config.MARKET_PUBLISHER) bridge.on("market", onMarket);
+
+  // The engine restarting wipes nothing (it replays its journal), but books may have
+  // moved while it was away, so book subscribers get a fresh snapshot once it's back.
+  let resnap: ReturnType<typeof setTimeout> | undefined;
+  const onUp = () => {
+    for (const c of clients) send(c, "exchange", { up: true });
+    clearTimeout(resnap);
+    resnap = setTimeout(() => {
+      for (const [channel, subs] of subscribers) {
+        const sym = channel.startsWith("book:") && symbolsByTicker.get(channel.slice(5));
+        if (!sym) continue;
+        const snap = { snapshot: true, ...bridge.books[sym.id]!.depth(50) };
+        for (const c of subs) send(c, channel, snap);
+      }
+    }, 500);
+  };
+  const onDown = () => {
+    for (const c of clients) send(c, "exchange", { up: false });
+  };
+  bridge.on("up", onUp);
+  bridge.on("down", onDown);
   app.addHook("onClose", async () => {
     bridge.off("market", onMarket);
+    bridge.off("up", onUp);
+    bridge.off("down", onDown);
+    clearTimeout(resnap);
     unsubscribe();
   });
 
@@ -103,7 +164,13 @@ export default async function wsRoutes(app: FastifyInstance) {
     if (kind === "book" || kind === "trades") {
       const sym = symbolsByTicker.get(arg ?? "");
       if (!sym) return "unknown symbol";
-      if (kind === "book") send(c, channel, { snapshot: true, ...bridge.books[sym.id]!.depth(50) });
+      if (kind === "book") {
+        const now = Date.now();
+        c.snapshots = c.snapshots.filter((t) => now - t < 10_000);
+        if (c.snapshots.length >= SNAPSHOTS_PER_10S) return "slow down";
+        c.snapshots.push(now);
+        send(c, channel, { snapshot: true, ...bridge.books[sym.id]!.depth(50) });
+      }
     } else if (channel === "me:orders") {
       if (c.userId === null) return "auth first";
     } else if (channel !== "status" && channel !== "news") {
@@ -117,13 +184,39 @@ export default async function wsRoutes(app: FastifyInstance) {
   }
 
   app.get("/ws", { websocket: true }, (ws, req) => {
-    const c: Client = { ws, userId: null, channels: new Set(), sent: [] };
+    const ip = req.ip;
+    if ((socketsByIp.get(ip) ?? 0) >= SOCKETS_PER_IP) {
+      ws.close(1013, "too many connections");
+      return;
+    }
+    bump(socketsByIp, ip, 1);
+    const c: Client = {
+      ws,
+      userId: null,
+      expiresAt: 0,
+      channels: new Set(),
+      tokens: MESSAGE_BURST,
+      refilledAt: Date.now(),
+      snapshots: [],
+    };
+    clients.add(c);
+    send(c, "exchange", { up: bridge.connected });
     let detach = () => {};
 
-    const authenticate = async (token: string) => {
+    // Signs the socket in, or renews it with a fresh token for the same user.
+    const authenticate = async (token: string): Promise<string | null> => {
       const claims = await tokens.verifyAccess(token);
-      if (!claims) return false;
+      if (!claims) return "bad token";
+      if (c.userId !== null) {
+        if (claims.userId !== c.userId) return "already signed in as someone else";
+        c.expiresAt = (claims.exp ?? 0) * 1000;
+        return null;
+      }
+      if ((socketsByUser.get(claims.userId) ?? 0) >= SOCKETS_PER_USER)
+        return "too many connections for this account";
+      bump(socketsByUser, claims.userId, 1);
       c.userId = claims.userId;
+      c.expiresAt = (claims.exp ?? 0) * 1000;
       const onOrder = (o: Order) => send(c, "me:orders", { order: o });
       const onFill = (f: unknown) => send(c, "me:orders", { fill: f });
       orders.on(`user:${claims.userId}`, onOrder);
@@ -131,28 +224,44 @@ export default async function wsRoutes(app: FastifyInstance) {
       detach = () => {
         orders.off(`user:${claims.userId}`, onOrder);
         orders.off(`fill:${claims.userId}`, onFill);
+        bump(socketsByUser, claims.userId, -1);
       };
-      return true;
+      return null;
     };
 
-    // The browser can't set headers on a WebSocket, so the token comes as a query param or an auth message.
     const queryToken = (req.query as Record<string, string | undefined>).token;
-    const ready = queryToken ? authenticate(queryToken) : Promise.resolve(true);
+    // Messages are handled one at a time, in order, so a subscribe sent right after an
+    // auth sees the signed-in socket.
+    let queue: Promise<unknown> = queryToken ? authenticate(queryToken) : Promise.resolve();
 
-    ws.on("message", async (raw) => {
-      await ready;
+    ws.on("message", (raw) => {
+      const now = Date.now();
+      c.tokens = Math.min(
+        MESSAGE_BURST,
+        c.tokens + ((now - c.refilledAt) / 1000) * MESSAGES_PER_SECOND,
+      );
+      c.refilledAt = now;
+      if (c.tokens < 1) {
+        ws.close(1008, "too many messages");
+        return;
+      }
+      c.tokens -= 1;
+      queue = queue.then(() => handle(raw.toString())).catch((err) => app.log.error(err));
+    });
+
+    async function handle(raw: string) {
       let msg: z.infer<typeof ClientMsg>;
       try {
-        msg = ClientMsg.parse(JSON.parse(raw.toString()));
+        msg = ClientMsg.parse(JSON.parse(raw));
       } catch {
         return send(c, "error", { message: "bad message" });
       }
       if (msg.op === "ping") return send(c, "pong", {});
       if (msg.op === "auth") {
-        const ok = c.userId === null && (await authenticate(msg.token ?? ""));
-        return send(c, ok ? "auth" : "error", ok ? { userId: c.userId } : { message: "bad token" });
+        const err = await authenticate(msg.token ?? "");
+        return send(c, err ? "error" : "auth", err ? { message: err } : { userId: c.userId });
       }
-      if (msg.op === "order" || msg.op === "cancel") return trade(msg, req.ip);
+      if (msg.op === "order" || msg.op === "cancel") return trade(msg, ip);
       const channel = msg.channel ?? "";
       if (msg.op === "subscribe") {
         const err = subscribe(c, channel);
@@ -161,7 +270,7 @@ export default async function wsRoutes(app: FastifyInstance) {
       c.channels.delete(channel);
       subscribers.get(channel)?.delete(c);
       send(c, "unsubscribed", { channel });
-    });
+    }
 
     async function trade(msg: z.infer<typeof ClientMsg>, ip: string) {
       const ref = msg.ref;
@@ -169,9 +278,8 @@ export default async function wsRoutes(app: FastifyInstance) {
         send(c, "error", { ref, error: code, message });
       if (c.userId === null) return fail("unauthorized", "auth first");
       const now = Date.now();
-      c.sent = c.sent.filter((t) => now - t < 1000);
-      if (c.sent.length >= ORDERS_PER_SECOND) return fail("rate_limited", "slow down");
-      c.sent.push(now);
+      if (now >= c.expiresAt) return fail("unauthorized", "session expired, send a fresh token");
+      if (!withinRate(recentOrders, c.userId, now)) return fail("rate_limited", "slow down");
       try {
         if (msg.op === "order") {
           const parsed = NewOrder.safeParse(msg.order);
@@ -206,7 +314,9 @@ export default async function wsRoutes(app: FastifyInstance) {
     }
 
     ws.on("close", () => {
+      clients.delete(c);
       detach();
+      bump(socketsByIp, ip, -1);
       for (const ch of c.channels) subscribers.get(ch)?.delete(c);
     });
   });

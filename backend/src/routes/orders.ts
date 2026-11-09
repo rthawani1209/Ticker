@@ -1,9 +1,9 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
-import { decodeJwt } from "jose";
 import { z } from "zod";
 
 import { audit } from "../audit.js";
-import { keyPrefix } from "../auth/api-keys.js";
+import { callerKey } from "../auth/caller.js";
+import { leagueFor } from "../auth/key-league.js";
 import { ApiError } from "../errors.js";
 import { NewOrder, toOrderInput } from "../order-schema.js";
 
@@ -19,9 +19,14 @@ export default async function orderRoutes(app: FastifyInstance) {
   const { orders, symbolsByTicker, db } = app.deps;
   app.addHook("preHandler", app.authenticate);
 
-  // Per-user limit on order entry. Rate limiting runs before authentication, so the key
-  // comes from the token's unverified subject; a forged token is rejected right after anyway.
-  const orderLimit = { rateLimit: { max: 20, timeWindow: 1000, keyGenerator: userKey } };
+  // Per-user limit on order entry, keyed by the verified caller (see identify in app.ts).
+  const orderLimit = {
+    rateLimit: {
+      max: 20,
+      timeWindow: 1000,
+      keyGenerator: async (req: FastifyRequest) => callerKey(req, await app.identify(req)),
+    },
+  };
   // Each API key has its own, lower orders-per-second limit set when it was made.
   const perKey = app.createRateLimit({
     timeWindow: 1000,
@@ -48,10 +53,7 @@ export default async function orderRoutes(app: FastifyInstance) {
           "size_cap",
           `this key can send at most ${key.maxOrderQty} shares an order`,
         );
-      // A key trades in the league it was made for.
-      if (league !== undefined && league !== (key.leagueId ?? undefined))
-        throw new ApiError(403, "wrong_league", "this key trades in a different league");
-      leagueId = key.leagueId ?? undefined;
+      leagueId = await leagueFor(db, req.user, league);
     }
     const order = await orders.place(req.user.userId, input, leagueId, key?.id);
     await audit(
@@ -75,20 +77,29 @@ export default async function orderRoutes(app: FastifyInstance) {
     const q = ListQuery.parse(req.query);
     return orders.list(req.user.userId, {
       open: q.open === "true" ? true : undefined,
-      league: q.league,
+      league: await leagueFor(db, req.user, q.league),
       limit: q.limit,
       before: q.before,
     });
   });
 
-  app.get("/:id", async (req, reply) => {
+  // An API key only sees orders in its own league; anything else looks like it isn't there.
+  async function ownOrder(req: FastifyRequest) {
     const { id } = Id.parse(req.params);
     const order = await orders.get(req.user.userId, id);
+    if (order && req.user.apiKey && order.league !== (await leagueFor(db, req.user, undefined)))
+      return null;
+    return order;
+  }
+
+  app.get("/:id", async (req, reply) => {
+    const order = await ownOrder(req);
     return order ?? reply.code(404).send({ error: "not_found", message: "no such order" });
   });
 
   app.delete("/:id", { config: orderLimit }, async (req) => {
     const { id } = Id.parse(req.params);
+    if (!(await ownOrder(req))) throw new ApiError(404, "not_found", "no such order");
     const order = await orders.cancel(req.user.userId, id);
     await audit(db, req.user.userId, "order_cancel", { orderId: id }, req.ip);
     return order;
@@ -104,20 +115,9 @@ export async function fillRoutes(app: FastifyInstance) {
         league: z.coerce.number().int().positive().optional(),
       })
       .parse(req.query);
-    return app.deps.orders.fills(req.user.userId, q);
+    return app.deps.orders.fills(req.user.userId, {
+      ...q,
+      league: await leagueFor(app.deps.db, req.user, q.league),
+    });
   });
-}
-
-function userKey(req: FastifyRequest): string {
-  const header = req.headers.authorization;
-  if (header?.startsWith("Bearer tk_")) return `k${keyPrefix(header.slice(7)) ?? req.ip}`;
-  if (header?.startsWith("Bearer ")) {
-    try {
-      const sub = decodeJwt(header.slice(7)).sub;
-      if (sub) return `u${sub}`;
-    } catch {
-      // fall through to the IP
-    }
-  }
-  return req.ip;
 }

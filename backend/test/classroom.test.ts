@@ -211,7 +211,9 @@ describe("classroom", () => {
     expect(grades.split("\r\n")[0]).toBe(
       "student,email,equity,return_pct,trades,Make two trades,Use a stop,Earn 1%",
     );
-    expect(grades).toContain(`${ana.name},${ana.name}@example.com,100010.00,0.01,2,pass,fail,fail`);
+    expect(grades).toContain(
+      `${ana.name},${ana.name}@example.com,100010.00,0.01,2,pass,pending,pending`,
+    );
 
     // Deleting an assignment removes it for students too.
     expect(
@@ -290,6 +292,11 @@ describe("grading and CSV helpers", () => {
       false,
     );
     expect(grade({ kind: "drawdown_at_most", target: 300, orderType: null }, stats).passed).toBe(
+      false,
+    );
+    // Never trading isn't a low drawdown.
+    const idle = { ...stats, trades: 0, drawdownBps: 0 };
+    expect(grade({ kind: "drawdown_at_most", target: 300, orderType: null }, idle).passed).toBe(
       false,
     );
     expect(grade({ kind: "use_order_type", target: 0, orderType: "bracket" }, stats)).toEqual({

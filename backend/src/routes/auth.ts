@@ -20,8 +20,9 @@ const COOKIE = "ticker_rt";
 export default async function authRoutes(app: FastifyInstance) {
   const { db, tokens, config } = app.deps;
   // Limits are sized for a classroom on one shared IP: 30 sign-ups or 60 logins a
-  // minute per IP, but only 10 password guesses a minute per account, and refreshes
-  // are counted per session rather than per IP.
+  // minute per IP, 10 password guesses a minute per account from any one IP (so a
+  // stranger can't lock someone out of their own account), and refreshes are counted
+  // per session rather than per IP.
   const perIp = (max: number) => ({
     rateLimit: { max, timeWindow: 60_000, keyGenerator: (req: FastifyRequest) => req.ip },
   });
@@ -29,7 +30,7 @@ export default async function authRoutes(app: FastifyInstance) {
     max: 10,
     timeWindow: 60_000,
     keyGenerator: (req) =>
-      `login:${String((req.body as { email?: unknown })?.email).toLowerCase()}`,
+      `login:${String((req.body as { email?: unknown })?.email).toLowerCase()}:${req.ip}`,
   });
   const perSession = {
     rateLimit: {
@@ -68,6 +69,28 @@ export default async function authRoutes(app: FastifyInstance) {
   app.post("/register", { config: perIp(30) }, async (req, reply) => {
     const body = Register.parse(req.body);
     const hash = await hashPassword(body.password);
+
+    // A guest saving their account keeps their portfolio: the guest row becomes the
+    // new account instead of a fresh user being made.
+    const caller = await app.identify(req);
+    if (caller?.kind === "user" && caller.claims.role === "guest") {
+      const { rows } = await db.query(
+        `UPDATE users SET email = $2, username = $3, password_hash = $4, role = 'student'
+         WHERE id = $1 AND role = 'guest'
+           AND NOT EXISTS (SELECT 1 FROM users WHERE id <> $1 AND (lower(email) = lower($2) OR lower(username) = lower($3)))
+         RETURNING id, username, role`,
+        [caller.claims.userId, body.email, body.username, hash],
+      );
+      const user = rows[0];
+      if (!user)
+        return reply
+          .code(409)
+          .send({ error: "taken", message: "email or username already in use" });
+      await audit(db, user.id, "register", { fromGuest: true }, req.ip);
+      reply.code(201);
+      return session(reply, user, await tokens.issueRefresh(user.id, meta(req)));
+    }
+
     // New users start with a portfolio in the practice league.
     const { rows } = await db.query(
       `WITH u AS (
@@ -92,7 +115,16 @@ export default async function authRoutes(app: FastifyInstance) {
   // email or password. Guests can trade in the practice league but can't join leagues.
   app.post(
     "/guest",
-    { config: { rateLimit: { max: 5, timeWindow: 3_600_000 } } },
+    // 60 an hour per IP: enough for a class behind one school NAT to all click it.
+    {
+      config: {
+        rateLimit: {
+          max: 60,
+          timeWindow: 3_600_000,
+          keyGenerator: (req: FastifyRequest) => `guest:${req.ip}`,
+        },
+      },
+    },
     async (req, reply) => {
       const { rows } = await db.query(
         `WITH u AS (

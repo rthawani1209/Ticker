@@ -47,9 +47,10 @@ export function startEngine(): Promise<{ proc: ChildProcess; port: number }> {
   });
 }
 
-export async function startBackend() {
+export async function startBackend(env: Record<string, string> = {}) {
   const config = loadConfig({
     ...process.env,
+    ...env,
     NODE_ENV: "test",
     DATABASE_URL:
       process.env.TEST_DATABASE_URL ?? "postgres://ticker:ticker@localhost:5432/ticker_test",

@@ -56,10 +56,17 @@ export type NewOrderBody = z.infer<typeof NewOrder>;
 
 export function toOrderInput(
   body: NewOrderBody,
-  symbolsByTicker: Map<string, { id: number }>,
+  symbolsByTicker: Map<string, { id: number; maxPrice: number }>,
 ): { input: OrderInput; league?: number } {
   const sym = symbolsByTicker.get(body.symbol);
   if (!sym) throw new ApiError(422, "unknown_symbol", `no symbol ${body.symbol}`);
+  for (const p of [body.price, body.stopPrice, body.takeProfit, body.stopLoss])
+    if (p !== undefined && p >= sym.maxPrice)
+      throw new ApiError(
+        422,
+        "invalid_price",
+        `${body.symbol} prices must be below $${(sym.maxPrice / 100).toFixed(2)}`,
+      );
   // Market orders can only be immediate; everything else rests until cancelled by default.
   const tif = body.tif ?? (body.type === "market" ? "ioc" : "gtc");
   const { league, symbol: _symbol, ...rest } = body;

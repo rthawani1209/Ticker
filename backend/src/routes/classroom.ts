@@ -239,7 +239,10 @@ export default async function classroomRoutes(app: FastifyInstance) {
           cents(p.equity),
           (p.returnPct * 100).toFixed(2),
           p.trades,
-          ...byUser.map((m) => (m.get(p.userId)?.passed ? "pass" : "fail")),
+          // Work that isn't due yet isn't failed yet.
+          ...byUser.map((m, i) =>
+            m.get(p.userId)?.passed ? "pass" : list[i]!.dueAt > new Date() ? "pending" : "fail",
+          ),
         ]),
       ),
     );

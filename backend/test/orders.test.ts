@@ -126,6 +126,18 @@ describe("orders", () => {
     expect(res.json()).toMatchObject({ status: "rejected", rejectReason: "price_band" });
   });
 
+  it("lets prices rally well past $655 and says where the ceiling is", async () => {
+    // $700 for ORBT is a band reject now, not an engine "invalid price".
+    const high = await place(alice.token, { symbol: "ORBT", side: "buy", price: 70_000, qty: 1 });
+    expect(high.json()).toMatchObject({ rejectReason: "price_band" });
+    const over = await place(alice.token, { symbol: "ORBT", side: "buy", price: 250_000, qty: 1 });
+    expect(over.statusCode).toBe(422);
+    expect(over.json()).toEqual({
+      error: "invalid_price",
+      message: "ORBT prices must be below $2480.00",
+    });
+  });
+
   it("market orders default to IOC and cancel what doesn't fill", async () => {
     await place(bob.token, { symbol: "MESA", side: "sell", price: 18_810, qty: 4 });
     const res = await place(alice.token, { symbol: "MESA", side: "buy", type: "market", qty: 10 });
@@ -274,5 +286,51 @@ describe("engine events", () => {
       leaves: 7,
       rejectReason: null,
     });
+  });
+
+  it("keeps resting orders working after the gateway reconnects", async () => {
+    const bid = (
+      await place(alice.token, { symbol: "MESA", side: "buy", price: 18_700, qty: 7 })
+    ).json();
+    expect(bid.status).toBe("open");
+
+    // A new engine session: the bid was placed by the old one.
+    const reconnected = new Promise((resolve) => b.bridge.once("up", resolve));
+    (b.bridge as any).socket.destroy();
+    await reconnected;
+    await b.orders.settled();
+
+    const sold = await place(bob.token, {
+      symbol: "MESA",
+      side: "sell",
+      price: 18_700,
+      qty: 7,
+      tif: "ioc",
+    });
+    expect(sold.json().status).toBe("filled");
+    await b.orders.settled();
+    const after = (
+      await b.app.inject({ url: `/v1/orders/${bid.id}`, headers: auth(alice.token) })
+    ).json();
+    expect(after).toMatchObject({ status: "filled", filledQty: 7 });
+    const positions = (
+      await b.app.inject({ url: "/v1/positions", headers: auth(alice.token) })
+    ).json();
+    expect(JSON.stringify(positions)).toContain("MESA");
+  });
+
+  it("closes an order the exchange no longer has when it is cancelled", async () => {
+    const { rows } = await b.db.query(
+      `INSERT INTO orders (user_id, portfolio_id, symbol_id, side, type, tif, price, qty, leaves, status, engine_order_id)
+       VALUES ($1, $2, 7, 'buy', 'limit', 'gtc', 18000, 5, 5, 'open', $3) RETURNING id`,
+      [alice.id, alice.portfolio, 7 * 2 ** 40 + 999_999],
+    );
+    const res = await b.app.inject({
+      method: "DELETE",
+      url: `/v1/orders/${rows[0].id}`,
+      headers: auth(alice.token),
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ status: "cancelled", rejectReason: "lost_at_exchange" });
   });
 });

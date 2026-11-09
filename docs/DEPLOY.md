@@ -18,12 +18,13 @@ browser ──► Vercel (Next.js) ──/v1/*──► backend (public) ──T
 
 REST calls go through the Vercel site, which forwards `/v1/*` to the backend. That keeps the login cookie first-party. Browsers drop `SameSite` cookies sent to a backend on a different domain, and Safari blocks third-party cookies outright. The live feed's WebSocket can't be forwarded by Vercel, so it goes straight to the backend. It signs in with a token, not the cookie, so that's fine.
 
-## 1. Two secrets
+## 1. Three secrets
 
-Make two random values and keep them somewhere safe:
+Make three random values and keep them somewhere safe:
 
 ```sh
 openssl rand -base64 48              # JWT_SECRET
+openssl rand -base64 32              # EDGE_SECRET
 python3 -c "import secrets; print(secrets.randbits(63))"   # TICKER_TOKEN, a number
 ```
 
@@ -49,11 +50,13 @@ python3 -c "import secrets; print(secrets.randbits(63))"   # TICKER_TOKEN, a num
    ENGINE_TOKEN=<TICKER_TOKEN>
    JWT_SECRET=<JWT_SECRET>
    CORS_ORIGIN=https://<your-app>.vercel.app
-   TRUST_PROXY=true
+   TRUST_PROXY=1
+   EDGE_SECRET=<EDGE_SECRET>
    ```
 
    - `?family=0` lets the Redis client use IPv6. Railway's private network is IPv6, and without it the client only tries IPv4.
-   - `TRUST_PROXY=true` makes per-IP limits (sign-ups, logins) count the visitor's IP, which Vercel and Railway pass along, rather than Vercel's.
+   - `TRUST_PROXY=1` says one proxy (Railway's edge) sits in front of the backend. Only the address that proxy adds to `X-Forwarded-For` is believed, so a caller can't pick their own IP by sending the header.
+   - `EDGE_SECRET` must match the one on Vercel. The web app signs each visitor's IP with it when it forwards `/v1` calls, so per-IP limits (sign-ups, logins) count visitors, not Vercel.
    - Under Settings → Networking, **Generate Domain**. That gives you `https://<backend>.up.railway.app`.
    - The backend creates its tables on first start.
 5. Deploy. The backend's health check (`/health`) passes once it can reach Postgres and the engine. If it stays red, check that `ENGINE_TOKEN` equals the engine's `TICKER_TOKEN`.
@@ -67,6 +70,7 @@ python3 -c "import secrets; print(secrets.randbits(63))"   # TICKER_TOKEN, a num
    NEXT_PUBLIC_API_URL=/
    NEXT_PUBLIC_WS_URL=wss://<backend>.up.railway.app/ws
    BACKEND_URL=https://<backend>.up.railway.app
+   EDGE_SECRET=<EDGE_SECRET>
    ```
 
 3. Deploy. Then put the Vercel URL into the backend's `CORS_ORIGIN` on Railway and redeploy the backend. If you have more than one URL (a preview or a custom domain), separate them with commas.
@@ -100,4 +104,4 @@ Then open http://localhost:3000. This is the same setup the "docker" CI job buil
 ## Known limits
 
 - **One engine.** The engine is one process holding the books in memory, with a journal for restarts. A redeploy pauses trading for the few seconds the engine takes to start and replay its journal. The gateway reconnects and reconciles on its own.
-- **Spoofable IP limits on direct calls.** The backend trusts `X-Forwarded-For` so that IP limits work behind Vercel. Someone calling the Railway URL directly could make up their own IP to dodge the per-IP sign-up and login limits. The per-account password-guess limit still applies.
+- **IP limits are per address.** A whole class behind one campus network shares an IP, so the per-IP limits are set high (60 guest accounts an hour) and signed-in requests are counted per user instead.

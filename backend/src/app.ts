@@ -7,7 +7,9 @@ import Fastify, { type FastifyReply, type FastifyRequest } from "fastify";
 import type { Redis } from "ioredis";
 import { ZodError } from "zod";
 
-import { isApiKey, keyPrefix, type ApiKeys } from "./auth/api-keys.js";
+import { isApiKey, type ApiKeys } from "./auth/api-keys.js";
+import { callerKey, type Caller } from "./auth/caller.js";
+import { edgeClientIp } from "./auth/edge.js";
 import type { AccessClaims, Tokens } from "./auth/tokens.js";
 import type { Config } from "./config.js";
 import type { Db } from "./db/pool.js";
@@ -45,6 +47,7 @@ declare module "fastify" {
     deps: Deps;
     routeList: { method: string; url: string }[];
     authenticate: (req: FastifyRequest, reply: FastifyReply) => Promise<void>;
+    identify: (req: FastifyRequest) => Promise<Caller>;
   }
   interface FastifyRequest {
     user: AccessClaims;
@@ -54,10 +57,15 @@ declare module "fastify" {
 export async function buildApp(deps: Deps, opts: { logger?: boolean } = {}) {
   const app = Fastify({
     logger: opts.logger ?? false,
-    trustProxy: deps.config.TRUST_PROXY,
+    // Trust the last TRUST_PROXY hops only, so a made-up X-Forwarded-For entry on the
+    // left is never taken as the IP. Fastify ignores a plain number, hence the function.
+    trustProxy: deps.config.TRUST_PROXY
+      ? (_addr: string, hop: number) => hop < deps.config.TRUST_PROXY
+      : false,
     bodyLimit: 16 * 1024,
   });
   app.decorate("deps", deps);
+  if (deps.config.EDGE_SECRET) app.addHook("onRequest", edgeClientIp(deps.config.EDGE_SECRET));
   // Every route, so the role test can check that none is left out of it.
   const routeList: { method: string; url: string }[] = [];
   app.decorate("routeList", routeList);
@@ -76,6 +84,31 @@ export async function buildApp(deps: Deps, opts: { logger?: boolean } = {}) {
     exposedHeaders: ["content-disposition"], // so CSV downloads keep their file name
   });
   await app.register(cookie);
+
+  // Each request's token is checked once, then remembered for the limiter and the route.
+  const callers = new WeakMap<FastifyRequest, Promise<Caller>>();
+  const identify = (req: FastifyRequest): Promise<Caller> => {
+    let found = callers.get(req);
+    if (!found) {
+      found = (async (): Promise<Caller> => {
+        const header = req.headers.authorization;
+        const token = header?.startsWith("Bearer ") ? header.slice(7) : null;
+        if (!token) return null;
+        if (isApiKey(token)) {
+          const k = await deps.apiKeys.verify(token);
+          return k
+            ? { kind: "key", userId: k.userId, role: k.role, key: k.key }
+            : { kind: "bad_key" };
+        }
+        const claims = await deps.tokens.verifyAccess(token);
+        return claims ? { kind: "user", claims } : null;
+      })();
+      callers.set(req, found);
+    }
+    return found;
+  };
+  app.decorate("identify", identify);
+
   // Signed-in requests are counted per user, everything else per IP. A whole class
   // behind one campus NAT shares an IP, so a per-IP limit alone would lock them out.
   await app.register(rateLimit, {
@@ -83,13 +116,7 @@ export async function buildApp(deps: Deps, opts: { logger?: boolean } = {}) {
     timeWindow: 60_000,
     redis: deps.redis,
     nameSpace: "ticker-rl:",
-    keyGenerator: async (req) => {
-      const header = req.headers.authorization;
-      const token = header?.startsWith("Bearer ") ? header.slice(7) : null;
-      if (token && isApiKey(token)) return `k${keyPrefix(token) ?? req.ip}`;
-      const claims = token ? await deps.tokens.verifyAccess(token) : null;
-      return claims ? `u${claims.userId}` : req.ip;
-    },
+    keyGenerator: async (req) => callerKey(req, await identify(req)),
   });
   await app.register(websocket, { options: { maxPayload: 4096 } });
 
@@ -98,14 +125,13 @@ export async function buildApp(deps: Deps, opts: { logger?: boolean } = {}) {
   // (making keys, leagues, classes, admin) needs a person's login.
   const BOT_ROUTES = ["/v1/orders", "/v1/fills", "/v1/positions", "/v1/me"];
   app.decorate("authenticate", async (req: FastifyRequest, reply: FastifyReply) => {
-    const header = req.headers.authorization;
-    const token = header?.startsWith("Bearer ") ? header.slice(7) : null;
-    if (token && isApiKey(token)) {
-      const found = await deps.apiKeys.verify(token);
-      if (!found)
-        return void (await reply
-          .code(401)
-          .send({ error: "unauthorized", message: "bad or revoked API key" }));
+    const caller = await identify(req);
+    if (caller?.kind === "bad_key")
+      return void (await reply
+        .code(401)
+        .send({ error: "unauthorized", message: "bad or revoked API key" }));
+    if (caller?.kind === "key") {
+      const found = caller;
       if (!(await deps.apiKeys.enabled()))
         return void (await reply
           .code(503)
@@ -118,14 +144,13 @@ export async function buildApp(deps: Deps, opts: { logger?: boolean } = {}) {
       req.user = { userId: found.userId, role: found.role, apiKey: found.key };
       return;
     }
-    const claims = token ? await deps.tokens.verifyAccess(token) : null;
-    if (!claims) {
+    if (!caller) {
       await reply
         .code(401)
         .send({ error: "unauthorized", message: "missing or expired access token" });
       return;
     }
-    req.user = claims;
+    req.user = caller.claims;
   });
 
   app.setErrorHandler((err, req, reply) => {

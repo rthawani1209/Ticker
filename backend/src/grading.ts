@@ -19,7 +19,7 @@ export interface Assignment {
 
 export interface Stats {
   returnBps: number;
-  trades: number;
+  trades: number; // orders with at least one fill
   drawdownBps: number;
   typesUsed: Set<string>; // order types with at least one fill, plus "bracket"
 }
@@ -38,7 +38,8 @@ export function grade(a: Pick<Assignment, "kind" | "target" | "orderType">, s: S
     case "trades_at_least":
       return { value: s.trades, passed: s.trades >= a.target };
     case "drawdown_at_most":
-      return { value: s.drawdownBps, passed: s.drawdownBps <= a.target };
+      // Not trading at all would pass with no drawdown, so it takes at least one trade.
+      return { value: s.drawdownBps, passed: s.trades > 0 && s.drawdownBps <= a.target };
     case "use_order_type": {
       const used = s.typesUsed.has(a.orderType ?? "");
       return { value: used ? 1 : 0, passed: used };
@@ -69,7 +70,8 @@ export async function gradeAssignment(
 
   const [trades, types, snaps, held] = await Promise.all([
     db.query(
-      `SELECT portfolio_id, count(*)::int AS n FROM fills
+      // Orders that traded, not fills: one order filled in ten pieces is one trade.
+      `SELECT portfolio_id, count(DISTINCT order_id)::int AS n FROM fills
        WHERE portfolio_id = ANY($1) AND created_at <= $2 GROUP BY portfolio_id`,
       [ids, cutoff],
     ),

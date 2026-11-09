@@ -320,4 +320,51 @@ describe("bracket orders", () => {
     });
     expect(exits?.map((o) => o.qty)).toEqual([10, 10]);
   });
+
+  it("leaves out shares another open sell is already closing", async () => {
+    const [alice, seller] = [await signUp(b), await signUp(b)];
+    const league = (
+      await b.app.inject({
+        method: "POST",
+        url: "/v1/leagues",
+        headers: auth(alice.token),
+        payload: { name: "No shorts either", allowShort: false },
+      })
+    ).json();
+
+    // The entry buys 30 of 50, and alice puts those 30 up for sale by hand.
+    await place(seller.token, { symbol: "HELX", side: "sell", price: 58_00, qty: 30 });
+    const entry = (
+      await place(alice.token, {
+        symbol: "HELX",
+        side: "buy",
+        price: 58_00,
+        qty: 50,
+        takeProfit: 61_00,
+        stopLoss: 55_00,
+        league: league.id,
+      })
+    ).json();
+    expect(entry.status).toBe("partially_filled");
+    const manual = await place(alice.token, {
+      symbol: "HELX",
+      side: "sell",
+      price: 62_00,
+      qty: 30,
+      league: league.id,
+    });
+    expect(manual.json().status).toBe("open");
+    await place(seller.token, { symbol: "HELX", side: "sell", price: 58_00, qty: 20 });
+
+    // 50 held, 30 already promised to the manual sell: the exits cover the other 20.
+    const exits = await until(async () => {
+      const live = (await exitsOf(alice.token, entry.id)).filter(working);
+      return live.length === 2 ? live : null;
+    });
+    expect(exits?.map((o) => o.qty)).toEqual([20, 20]);
+
+    // So everything alice has offered (one exit fills, the other is then cancelled, plus
+    // the manual sell) adds up to the 50 she holds, and buying it all leaves her flat.
+    expect(exits![0]!.qty + manual.json().qty).toBe(50);
+  });
 });

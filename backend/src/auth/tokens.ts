@@ -14,6 +14,7 @@ export interface AccessClaims {
   userId: number;
   role: Role;
   apiKey?: import("./api-keys.js").KeyLimits; // set when a bot authenticated with an API key
+  exp?: number; // seconds since the epoch, set on verified access tokens
 }
 
 export class Tokens {
@@ -38,7 +39,7 @@ export class Tokens {
   async verifyAccess(token: string): Promise<AccessClaims | null> {
     try {
       const { payload } = await jwtVerify(token, this.key, { algorithms: ["HS256"] });
-      return { userId: Number(payload.sub), role: payload.role as Role };
+      return { userId: Number(payload.sub), role: payload.role as Role, exp: payload.exp };
     } catch {
       return null;
     }

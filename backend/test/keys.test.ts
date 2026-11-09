@@ -82,6 +82,42 @@ describe("API keys", () => {
     expect(other.statusCode).toBe(403);
   });
 
+  it("keeps a key out of the owner's other leagues when cancelling and reading", async () => {
+    const u = await signUp(b);
+    const league = (await call(u.token, "POST", "/v1/leagues", { name: "Human league" })).json();
+    // The owner's own order in their class league, placed from the browser.
+    const human = (
+      await call(u.token, "POST", "/v1/orders", {
+        symbol: "KILN",
+        side: "buy",
+        price: 23_00,
+        qty: 3,
+        league: league.id,
+      })
+    ).json();
+    expect(human.status).toBe("open");
+    const k = await newKey(u); // a practice-league key
+
+    expect((await call(k.key, "DELETE", `/v1/orders/${human.id}`)).statusCode).toBe(404);
+    expect((await call(k.key, "GET", `/v1/orders/${human.id}`)).statusCode).toBe(404);
+    expect((await call(u.token, "GET", `/v1/orders/${human.id}`)).json().status).toBe("open");
+
+    // Lists only show the key's league, and asking for another one is refused.
+    expect(await (await call(k.key, "GET", "/v1/orders")).json()).toEqual([]);
+    for (const url of ["/v1/orders", "/v1/fills", "/v1/positions", "/v1/positions/analytics"])
+      expect((await call(k.key, "GET", `${url}?league=${league.id}`)).statusCode, url).toBe(403);
+    const pos = (await call(k.key, "GET", "/v1/positions")).json();
+    expect(pos.league).not.toBe(league.id);
+
+    // Its own practice orders it can still read and cancel.
+    const own = (
+      await call(k.key, "POST", "/v1/orders", { symbol: "KILN", side: "buy", price: 23_00, qty: 1 })
+    ).json();
+    expect((await call(k.key, "GET", "/v1/orders")).json().map((o: any) => o.id)).toEqual([own.id]);
+    expect((await call(k.key, "DELETE", `/v1/orders/${own.id}`)).json().status).toBe("cancelled");
+    await call(u.token, "DELETE", `/v1/orders/${human.id}`);
+  });
+
   it("enforces the size cap and the per-key rate", async () => {
     const u = await signUp(b);
     const k = await newKey(u, { maxOrderQty: 50, ordersPerSecond: 2 });

@@ -28,7 +28,7 @@ Status: **done** = built and proven; **partial** = built, proof or number still 
 | Compact fixed-size binary protocol | done | `protocol.hpp` static_asserts; `docs/protocol.md`; matching size tests in Python and TypeScript | `ctest --test-dir engine/build -R Protocol` | **NewOrder = 48 bytes** (Replace is 40) |
 | Journal with byte-identical replay | done | `JournalTest.ReplayIsByteIdentical`, `ServerTest.RestartRecoversBookFromJournal`, `ticker-replay` | `ctest --test-dir engine/build -R Journal` | |
 | Replay of a recorded trading day | planned (day 12) | | | |
-| Fuzz target for the message parser | partial | `Protocol.FuzzParser` (200k random buffers); libFuzzer target planned (day 12) | `ctest --test-dir engine/build -R Protocol` | |
+| Fuzzing the parser and the matching | done | `Protocol.FuzzParser` (200k random buffers); `engine/fuzz/book_fuzz.cpp`, a libFuzzer target that feeds raw wire bytes to the book and the reference book under ASan and UBSan; 5 minutes per CI run on a cached corpus | `scripts/check.sh --fuzz` | |
 
 ## Market simulator (Python)
 
@@ -57,7 +57,7 @@ Status: **done** = built and proven; **partial** = built, proof or number still 
 | Integration tests against real Postgres and Redis | done | `backend/test/harness.ts`; `.github/workflows/backend.yml` | same | 90 tests |
 | Redis pub/sub fan-out to WebSocket servers | done | `backend/src/ws/fanout.ts`; `backend/test/fanout.test.ts` (two gateways, a client on each gets every trade exactly once) | `cd backend && npx vitest run test/fanout.test.ts` | |
 | WebSocket delay with two gateways | done | [`docs/results/ws-delay-2026-11-06.json`](results/ws-delay-2026-11-06.json); `backend/scripts/ws-delay.ts` | `cd backend && npx tsx scripts/ws-delay.ts` | **p50 9 ms, p99 17 ms** (publishing gateway) and **p50 6 ms, p99 12 ms** (relay) to 500 clients, 250k messages each, no drops; one 4-vCPU VM with clients in the same process |
-| [X] ms p99 end-to-end under load (500 users + 50 bots) | planned (day 12) | | | |
+| Order round trip under load (WebSockets, many users) | done | see the load test under Operations below | | **p50 9 ms, p99 48 ms** at 150 users and 150 orders/s, 0 errors |
 
 ## Ledger and leagues (TypeScript)
 

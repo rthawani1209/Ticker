@@ -6,6 +6,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 
 import { audit } from "../audit.js";
+import { leagueFor } from "../auth/key-league.js";
 import { ApiError } from "../errors.js";
 import { downsample, maxDrawdown, winRate, type EquityPoint } from "../analytics.js";
 import { sharpeRatio } from "../leaderboard.js";
@@ -216,7 +217,7 @@ export async function positionRoutes(app: FastifyInstance) {
 
   app.get("/", async (req) => {
     const { league } = LeagueQuery.parse(req.query);
-    const pf = await portfolioFor(req.user.userId, league);
+    const pf = await portfolioFor(req.user.userId, await leagueFor(db, req.user, league));
     const { equity, positions } = await valued(pf);
     return {
       league: pf.league_id,
@@ -230,7 +231,7 @@ export async function positionRoutes(app: FastifyInstance) {
 
   app.get("/analytics", async (req) => {
     const { league } = LeagueQuery.parse(req.query);
-    const pf = await portfolioFor(req.user.userId, league);
+    const pf = await portfolioFor(req.user.userId, await leagueFor(db, req.user, league));
     const { equity } = await valued(pf);
     const [snaps, fills] = await Promise.all([
       db.query("SELECT at, equity FROM equity_snapshots WHERE portfolio_id = $1 ORDER BY at", [

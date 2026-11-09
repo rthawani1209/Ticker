@@ -326,6 +326,64 @@ describe("leagues", () => {
     const ids = await b.db.query("SELECT id FROM portfolios WHERE league_id = $1", [league.id]);
     for (const r of ids.rows) expect(await expectRebuildMatches(r.id)).toBe(1);
   });
+
+  it("charges the flat fee once per order, so one-share fills can't drain a buyer", async () => {
+    const [buyer, seller] = [await signUp(b), await signUp(b)];
+    const league = (
+      await post(buyer, "/v1/leagues", { name: "Big fees", commissionCents: 100_00 })
+    ).json();
+    await post(seller, "/v1/leagues/join", { code: league.inviteCode });
+
+    // All of the buyer's cash, less one $100 fee.
+    const qty = Math.floor((100_000_00 - 100_00) / 74_50);
+    const bid = await place(buyer, {
+      symbol: "BRKL",
+      side: "buy",
+      price: 74_50,
+      qty,
+      league: league.id,
+    });
+    expect(bid.statusCode, bid.body).toBe(201);
+
+    // The fee still to come is held back, so nothing else fits.
+    const extra = await place(buyer, {
+      symbol: "KILN",
+      side: "buy",
+      price: 25_00,
+      qty: 1,
+      league: league.id,
+    });
+    expect(extra.json().error).toBe("insufficient_funds");
+
+    // The seller fills the bid one share at a time (as fast as the order limit allows), then the rest.
+    for (let i = 0; i < 15; i++)
+      await place(seller, {
+        symbol: "BRKL",
+        side: "sell",
+        price: 74_50,
+        qty: 1,
+        league: league.id,
+      });
+    await place(seller, {
+      symbol: "BRKL",
+      side: "sell",
+      price: 74_50,
+      qty: qty - 15,
+      league: league.id,
+    });
+    await b.orders.settled();
+
+    const after = (await get(buyer, `/v1/positions?league=${league.id}`)).json();
+    expect(after.positions[0]).toMatchObject({ symbol: "BRKL", qty });
+    expect(after.cash).toBe(100_000_00 - qty * 74_50 - 100_00);
+    const fees = (await get(buyer, `/v1/fills?league=${league.id}`))
+      .json()
+      .map((f: any) => f.commission);
+    expect(fees).toHaveLength(16);
+    expect(fees.reduce((a: number, c: number) => a + c, 0)).toBe(100_00);
+    const pf = await b.db.query("SELECT id FROM portfolios WHERE league_id = $1", [league.id]);
+    for (const r of pf.rows) expect(await expectRebuildMatches(r.id)).toBe(16);
+  });
 });
 
 describe("self-trade prevention", () => {

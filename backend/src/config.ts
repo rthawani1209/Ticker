@@ -19,12 +19,17 @@ const Env = z.object({
   CORS_ORIGIN: z.string().default("http://localhost:3000"),
   // How often portfolio values are saved for return charts and the Sharpe ratio.
   SNAPSHOT_INTERVAL_S: z.coerce.number().int().min(1).default(60),
-  // Only behind a load balancer that sets X-Forwarded-For. Otherwise clients could
-  // pick their own IP and dodge per-IP rate limits.
+  // How many proxies in front of the backend add to X-Forwarded-For (Railway's edge is
+  // one). Only the entries those proxies added are believed; anything further left was
+  // written by the client. 0 ignores the header. "true" is kept as an alias for 1.
   TRUST_PROXY: z
-    .enum(["true", "false", "1", "0"])
-    .default("false")
-    .transform((v) => v === "true" || v === "1"),
+    .string()
+    .default("0")
+    .transform((v) => (v === "true" ? 1 : v === "false" ? 0 : Number(v)))
+    .pipe(z.number().int().min(0).max(5)),
+  // Shared with the web app. Requests it forwards carry the visitor's IP in
+  // x-ticker-client-ip, signed with this, because Vercel's own IP is all the backend sees.
+  EDGE_SECRET: z.string().min(24).optional(),
 });
 
 export type Config = z.infer<typeof Env>;

@@ -161,19 +161,45 @@ describe("auth", () => {
     expect(rows).toEqual([{ ip: "10.7.7.7" }]);
   });
 
-  it("rate limits password guesses per account, even from different IPs", async () => {
+  it("rate limits password guesses per account and IP, without locking out the owner", async () => {
     const codes: number[] = [];
     for (let i = 0; i < 12; i++) {
       const res = await b.app.inject({
         method: "POST",
         url: "/v1/auth/login",
-        remoteAddress: `10.9.9.${i}`,
+        remoteAddress: "10.9.9.9",
         payload: { email: "Victim@example.com", password: "guessing guess" },
       });
       codes.push(res.statusCode);
     }
     expect(codes.slice(0, 10).every((c) => c === 401)).toBe(true);
     expect(codes.slice(10)).toEqual([429, 429]);
+
+    // The guesser's IP is blocked for this account, but the owner on their own network is not.
+    const owner = await b.app.inject({
+      method: "POST",
+      url: "/v1/auth/login",
+      remoteAddress: "10.9.8.1",
+      payload: { email: "victim@example.com", password: "guessing guess" },
+    });
+    expect(owner.statusCode).toBe(401);
+  });
+
+  it("does not give a made-up API key its own rate limit bucket", async () => {
+    // Before, any "Bearer tk_..." header got a fresh bucket, so rotating fake keys dodged the IP limit.
+    const remaining: number[] = [];
+    for (let i = 0; i < 5; i++) {
+      const res = await b.app.inject({
+        method: "GET",
+        url: "/v1/me",
+        remoteAddress: "10.9.7.7",
+        headers: { authorization: `Bearer tk_${i}_${"x".repeat(32)}` },
+      });
+      expect(res.statusCode).toBe(401);
+      remaining.push(Number(res.headers["x-ratelimit-remaining"]));
+    }
+    // All five count against the same per-IP bucket.
+    expect(remaining).toEqual([0, 1, 2, 3, 4].map((n) => remaining[0]! - n));
   });
 
   it("lets a whole class log in and refresh from one shared IP", async () => {
@@ -218,5 +244,43 @@ describe("auth", () => {
       }
     }
     expect([...codes]).toEqual([200]); // 400 calls from one IP, but 200 per user
+  });
+
+  it("turns a guest into the new account, portfolio and all", async () => {
+    const g = (
+      await b.app.inject({ method: "POST", url: "/v1/auth/guest", remoteAddress: "10.6.6.6" })
+    ).json();
+    const bought = await b.app.inject({
+      method: "POST",
+      url: "/v1/orders",
+      headers: auth(g.accessToken),
+      payload: { symbol: "KILN", side: "buy", price: 24_00, qty: 3 },
+    });
+    expect(bought.statusCode).toBe(201);
+    const name = `saved${process.pid}`;
+    const res = await b.app.inject({
+      method: "POST",
+      url: "/v1/auth/register",
+      headers: auth(g.accessToken),
+      payload: { email: `${name}@example.com`, username: name, password: "correct horse battery" },
+    });
+    expect(res.statusCode, res.body).toBe(201);
+    expect(res.json().user).toMatchObject({ id: g.user.id, username: name, role: "student" });
+    const orders = await b.app.inject({ url: "/v1/orders", headers: auth(res.json().accessToken) });
+    expect(orders.json().map((o: any) => o.id)).toEqual([bought.json().id]);
+    await b.app.inject({
+      method: "DELETE",
+      url: `/v1/orders/${bought.json().id}`,
+      headers: auth(res.json().accessToken),
+    });
+
+    // Signing in works with the new details, and a second save is a normal sign-up.
+    const login = await b.app.inject({
+      method: "POST",
+      url: "/v1/auth/login",
+      remoteAddress: "10.6.6.7",
+      payload: { email: `${name}@example.com`, password: "correct horse battery" },
+    });
+    expect(login.json().user.id).toBe(g.user.id);
   });
 });
