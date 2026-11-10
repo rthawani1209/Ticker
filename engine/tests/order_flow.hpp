@@ -49,6 +49,11 @@ public:
             c.order_id = pick_live();
             c.price = mid_ + Price(rng_() % 21) - 10;
             c.qty = Qty(1 + rng_() % 50);
+            // Now and then expect an open size, which usually won't match (OrderChanged),
+            // or ask about the order instead. No extra random draws, and not in the
+            // low-price suite, which needs every replace to keep its thin book trading.
+            if (cfg_.ref_price > 100 && cl_ % 7 == 0) c.stop_price = Price(c.qty);
+            if (cfg_.ref_price > 100 && cl_ % 13 == 0) c.type = CmdType::Query;
         } else if (roll < 31) {
             c.type = CmdType::Snapshot;
         } else if (chaos_ && roll < 32 && rng_() % 8 == 0) {

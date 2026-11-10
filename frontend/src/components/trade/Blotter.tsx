@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type KeyboardEvent } from "react";
 
 import type { Fill, Order, Portfolio } from "@/lib/api";
 import { direction, formatMoney, formatPrice } from "@/lib/format";
@@ -44,6 +44,17 @@ export function Blotter({ portfolio, orders, fills, onCancel, onAmend, onPick }:
   const [tab, setTab] = useState<Tab>("positions");
   const [edit, setEdit] = useState<{ id: number; price: string; qty: string } | null>(null);
   const [editError, setEditError] = useState<string | null>(null);
+  // Enter saves, Esc closes the editor. Esc is handled here so the trade screen's
+  // "Esc cancels your orders" key never sees it.
+  const editKey = (e: KeyboardEvent, o: Order) => {
+    if (e.key === "Enter") save(o);
+    if (e.key === "Escape") {
+      e.preventDefault();
+      e.stopPropagation();
+      setEdit(null);
+      setEditError(null);
+    }
+  };
   const startEdit = (o: Order) => {
     setEditError(null);
     setEdit({ id: o.id, price: (o.price! / 100).toFixed(2), qty: String(o.leaves) });
@@ -137,7 +148,7 @@ export function Blotter({ portfolio, orders, fills, onCancel, onAmend, onPick }:
                       aria-label="New price"
                       value={edit.price}
                       onChange={(e) => setEdit({ ...edit, price: e.target.value })}
-                      onKeyDown={(e) => e.key === "Enter" && save(o)}
+                      onKeyDown={(e) => editKey(e, o)}
                     />
                   ) : (
                     describe(o)
@@ -153,7 +164,7 @@ export function Blotter({ portfolio, orders, fills, onCancel, onAmend, onPick }:
                         onChange={(e) =>
                           setEdit({ ...edit, qty: e.target.value.replace(/\D/g, "") })
                         }
-                        onKeyDown={(e) => e.key === "Enter" && save(o)}
+                        onKeyDown={(e) => editKey(e, o)}
                       />
                     </span>
                   ) : (

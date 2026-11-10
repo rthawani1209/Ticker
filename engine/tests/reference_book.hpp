@@ -43,6 +43,7 @@ public:
         if (c.type == CmdType::Cancel) return on_cancel(c, out);
         if (c.type == CmdType::Replace) return on_replace(c, out);
         if (c.type == CmdType::Snapshot) return on_snapshot(c, out);
+        if (c.type == CmdType::Query) return on_query(c, out);
         reject(c, RejectReason::InvalidField, out);
     }
 
@@ -442,6 +443,7 @@ private:
         Queue::iterator it;
         if (!find(c.order_id, s, p, it)) return reject(c, RejectReason::UnknownOrder, out);
         if (it->account != c.account) return reject(c, RejectReason::NotOwner, out);
+        if (c.stop_price != 0 && Price(it->qty) != c.stop_price) return reject(c, RejectReason::OrderChanged, out);
 
         Event e{};
         e.type = EventType::Replaced;
@@ -471,6 +473,32 @@ private:
         delta(s, p, out);
         execute(moved, true, false, out);
         run_stops(out);
+    }
+
+    void on_query(const Command& c, std::vector<Event>& out) {
+        Event e{};
+        e.type = EventType::Status;
+        e.symbol = symbol_;
+        e.session = c.session;
+        e.account = c.account;
+        e.order_id = c.order_id;
+        e.cl_ord_id = c.cl_ord_id;
+        Side s;
+        Price p;
+        Queue::iterator it;
+        if (find(c.order_id, s, p, it) && it->account == c.account) {
+            e.side = s;
+            e.price = p;
+            e.qty = it->qty;
+            e.leaves = it->qty;
+        } else if (auto st = find_stop(c.order_id); st != stops_.end() && st->o.account == c.account) {
+            e.side = st->o.side;  // a waiting stop: price left 0
+            e.qty = st->o.qty;
+            e.leaves = st->o.qty;
+        } else {
+            e.reason = 1;
+        }
+        out.push_back(e);
     }
 
     void on_snapshot(const Command& c, std::vector<Event>& out) {

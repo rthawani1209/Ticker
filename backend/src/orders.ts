@@ -141,7 +141,10 @@ export class OrderService extends EventEmitter {
       if (e.account === 0 || e.account >= FIRST_BOT_ACCOUNT) return;
       this.enqueue(() => this.apply(e));
     });
-    bridge.on("up", () => this.enqueue(() => this.reconcile().then(() => {})));
+    bridge.on("up", () => {
+      this.enqueue(() => this.reconcile().then(() => {}));
+      this.checkOpenOrders().catch((err) => this.emit("error", err));
+    });
   }
 
   private enqueue(task: () => Promise<void>): void {
@@ -404,7 +407,7 @@ export class OrderService extends EventEmitter {
   ): Promise<Order> {
     if (!this.bridge.connected)
       throw new ApiError(503, "exchange_down", "the exchange is not connected");
-    let target = { account: 0, engineId: 0, symbolId: 0, qty: 0, price: 0 };
+    let target = { account: 0, engineId: 0, symbolId: 0, qty: 0, price: 0, leaves: 0 };
     await this.tx(async (client) => {
       const { rows } = await client.query(
         `SELECT o.id, o.portfolio_id, o.symbol_id, o.side, o.type, o.tif, o.price, o.leaves, o.status,
@@ -442,21 +445,40 @@ export class OrderService extends EventEmitter {
         symbolId: o.symbol_id,
         qty,
         price,
+        leaves: o.leaves,
       };
     });
+    // The limits were checked against the open size the ledger has. If some of it fills
+    // before the engine gets this, setting the size anyway would add to the shares just
+    // bought, past a position limit or into a short, so the engine checks it's unchanged.
     const reply = await this.bridge.replace(
       target.account,
       target.engineId,
       target.symbolId,
       target.qty,
       target.price,
+      target.leaves,
     );
     await this.settled();
     if (!reply)
       throw new ApiError(504, "replace_pending", "the exchange hasn't confirmed the change yet");
     if (reply.type === p.EventType.Reject) {
       const reason = p.REJECT_REASONS[reply.reason] ?? "rejected";
-      if (reason === "unknown_order") throw new ApiError(409, "not_open", "order already finished");
+      if (reason === "unknown_order") {
+        // Open here but not on the exchange: see cancel().
+        await this.flagOutOfSync(orderId, "amend");
+        throw new ApiError(
+          409,
+          "out_of_sync",
+          "the exchange no longer has this order; it's flagged for a check",
+        );
+      }
+      if (reason === "order_changed")
+        throw new ApiError(
+          409,
+          "order_changed",
+          "the order filled while you were changing it, try again",
+        );
       throw new ApiError(422, "replace_rejected", reason.replaceAll("_", " "));
     }
     return (await this.get(userId, orderId))!;
@@ -518,15 +540,14 @@ export class OrderService extends EventEmitter {
       const current = (await this.get(userId, orderId))!;
       if (current.status === "filled") throw new ApiError(409, "not_open", "order already filled");
       if (p.REJECT_REASONS[reject.reason] === "unknown_order") {
-        // The exchange no longer has it, yet nothing told us how it ended. A gateway
-        // that comes back gets the events it missed (kReplay), so this means more than
-        // 15 minutes of events were lost. Filled or cancelled is unknown, so the order
-        // is left as it is for someone to look at rather than called cancelled.
-        this.emit("error", new Error(`order ${orderId} is open here but unknown to the exchange`));
+        // The exchange no longer has it, yet nothing told us how it ended (say the
+        // engine restarted while no gateway was up). Filled or cancelled is unknown, so
+        // the order is flagged for someone to look at rather than called cancelled.
+        await this.flagOutOfSync(orderId, "cancel");
         throw new ApiError(
           409,
           "out_of_sync",
-          "the exchange no longer has this order and how it ended is being checked",
+          "the exchange no longer has this order; it's flagged for a check",
         );
       }
       throw new ApiError(409, "cancel_rejected", p.REJECT_REASONS[reject.reason] ?? "rejected");
@@ -663,7 +684,17 @@ export class OrderService extends EventEmitter {
             `SELECT ${LEAGUE_COLUMNS} FROM portfolios pf JOIN leagues l ON l.id = pf.league_id WHERE pf.id = $1`,
             [o.portfolio_id],
           );
-          const fee = commission(toLeague(league.rows[0]), e.price, e.qty, o.filled_qty === 0);
+          const earlier = await client.query(
+            "SELECT coalesce(sum(price * qty), 0)::bigint AS value FROM fills WHERE order_id = $1",
+            [o.id],
+          );
+          const fee = commission(
+            toLeague(league.rows[0]),
+            e.price,
+            e.qty,
+            o.filled_qty === 0,
+            Number(earlier.rows[0].value),
+          );
           // The fill row goes in first: if this exact fill was already recorded
           // (a replayed or duplicated event), nothing below runs.
           const inserted = await client.query(
@@ -721,7 +752,8 @@ export class OrderService extends EventEmitter {
           // sends events again to a gateway that comes back (see the engine's kReplay).
           const r = await client.query(
             `UPDATE orders SET status = 'cancelled', leaves = 0, updated_at = now(),
-               reject_reason = CASE WHEN $2 = 'user' THEN NULL ELSE $2 END
+               reject_reason = CASE WHEN reject_reason = 'out_of_sync' THEN reject_reason
+                                    WHEN $2 = 'user' THEN NULL ELSE $2 END
              WHERE id = $1 AND status IN ('pending', 'open', 'partially_filled')`,
             [o.id, reason],
           );
@@ -741,18 +773,12 @@ export class OrderService extends EventEmitter {
           await audit(this.db, null, "exchange_events_lost", {});
           break;
         }
+        // Whatever its status: a later fill or cancel doesn't make up for the lost one.
         const r = await this.db.query(
-          `UPDATE orders SET reject_reason = 'out_of_sync', updated_at = now()
-           WHERE (engine_order_id = $1 OR (id = $2 AND portfolio_id = $3))
-             AND status IN ('pending', 'open', 'partially_filled')
-           RETURNING id, user_id`,
+          "SELECT id FROM orders WHERE engine_order_id = $1 OR (id = $2 AND portfolio_id = $3)",
           [e.orderId, e.clOrdId, e.account],
         );
-        ({ id, user_id: userId } = r.rows[0] ?? {});
-        if (id !== undefined) {
-          this.emit("error", new Error(`order ${id} may be missing events from the exchange`));
-          await audit(this.db, userId!, "order_out_of_sync", { orderId: id });
-        }
+        if (r.rows[0]) ({ id, userId } = (await this.flagOutOfSync(r.rows[0].id, "lost")) ?? {});
         break;
       }
       case p.EventType.Replaced: {
@@ -770,6 +796,82 @@ export class OrderService extends EventEmitter {
       const order = await this.get(userId, id);
       if (order) this.emit(`user:${userId}`, order);
     }
+  }
+
+  // Marks an order whose ledger entry may not match the exchange. The flag stays for
+  // good (fills and cancels keep it), so a teacher can find it and put it right.
+  private async flagOutOfSync(orderId: number, why: string) {
+    const r = await this.db.query(
+      `UPDATE orders SET reject_reason = 'out_of_sync', updated_at = now()
+       WHERE id = $1 AND reject_reason IS DISTINCT FROM 'out_of_sync' RETURNING id, user_id`,
+      [orderId],
+    );
+    const row = r.rows[0];
+    if (!row) return null;
+    this.emit("error", new Error(`order ${orderId} may not match the exchange (${why})`));
+    await audit(this.db, row.user_id, "order_out_of_sync", { orderId, why });
+    return { id: row.id as number, userId: row.user_id as number };
+  }
+
+  // After a reconnect, asks the engine about every order the ledger has open. Events the
+  // engine couldn't hold for us (it restarted while no gateway was up, or a gateway took
+  // them and died before writing them) show up as a difference, and the order is
+  // flagged rather than left looking fine.
+  async checkOpenOrders(recheckMs = 3000): Promise<number> {
+    const { rows } = await this.db.query(
+      `SELECT id, portfolio_id, symbol_id, engine_order_id FROM orders
+       WHERE status IN ('open', 'partially_filled') AND engine_order_id IS NOT NULL
+         AND reject_reason IS DISTINCT FROM 'out_of_sync'`,
+    );
+    let flagged = 0;
+    const checks: Promise<void>[] = [];
+    for (let i = 0; i < rows.length; i += 200) {
+      const batch = rows.slice(i, i + 200);
+      const answers = await Promise.all(
+        batch.map((r) =>
+          this.bridge
+            .query(r.portfolio_id, Number(r.engine_order_id), r.symbol_id)
+            .catch(() => null),
+        ),
+      );
+      for (const [k, st] of answers.entries()) {
+        if (!st) continue;
+        const id = batch[k]!.id as number;
+        const open = st.reason === 0 ? st.leaves : 0;
+        // Queued behind every event that arrived before the answer, so the ledger is
+        // as current as this gateway can make it. Another gateway may still be writing
+        // a cancel or fill it got, so a mismatch is looked at again a moment later.
+        checks.push(
+          new Promise<void>((resolve) =>
+            this.enqueue(async () => {
+              if (!(await this.behind(id, open))) return resolve();
+              setTimeout(() => {
+                this.enqueue(async () => {
+                  if ((await this.behind(id, open)) && (await this.flagOutOfSync(id, "check"))) {
+                    flagged++;
+                    const o = await this.db.query("SELECT user_id FROM orders WHERE id = $1", [id]);
+                    const order = await this.get(o.rows[0].user_id, id);
+                    if (order) this.emit(`user:${o.rows[0].user_id}`, order);
+                  }
+                  resolve();
+                });
+              }, recheckMs).unref();
+            }),
+          ),
+        );
+      }
+    }
+    await Promise.all(checks);
+    return flagged;
+  }
+
+  // True if the ledger still has more of this order open than the exchange does.
+  private async behind(orderId: number, exchangeOpen: number): Promise<boolean> {
+    const { rows } = await this.db.query("SELECT status, leaves FROM orders WHERE id = $1", [
+      orderId,
+    ]);
+    const o = rows[0];
+    return !!o && ["open", "partially_filled"].includes(o.status) && o.leaves > exchangeOpen;
   }
 
   private async tx(fn: (client: PoolClient) => Promise<void>): Promise<void> {

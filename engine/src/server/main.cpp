@@ -1,8 +1,10 @@
 // ticker-engine: the matching engine as a TCP server.
 //
 //   ticker-engine [--port 9100] [--shards 2] [--journal-dir DIR] [--fsync] [--token N]
+//                 [--held-events N]
 //
 // The token can also come from TICKER_TOKEN so it doesn't show up in `ps`.
+#include <algorithm>
 #include <csignal>
 #include <cstdio>
 #include <cstdlib>
@@ -16,7 +18,7 @@ using namespace ticker;
 namespace {
 
 [[noreturn]] void usage(const char* argv0) {
-    std::fprintf(stderr, "usage: %s [--host H] [--port N] [--shards N] [--journal-dir DIR] [--fsync] [--token N]\n",
+    std::fprintf(stderr, "usage: %s [--host H] [--port N] [--shards N] [--journal-dir DIR] [--fsync] [--token N] [--held-events N]\n",
                  argv0);
     std::exit(2);
 }
@@ -45,6 +47,8 @@ int main(int argc, char** argv) {
             cfg.fsync = true;
         else if (a == "--token")
             cfg.token = std::strtoull(value(), nullptr, 10);
+        else if (a == "--held-events")  // events held for a missing gateway (tests shrink it)
+            cfg.held_events = std::max<std::size_t>(1, std::strtoull(value(), nullptr, 10));
         else
             usage(argv[0]);
     }

@@ -21,10 +21,13 @@ Each type has exactly one valid length. A header with an unknown type, wrong len
 | 1    | Logon     | 24   | account u32, flags u32, pad u32, token u64 |
 | 2    | NewOrder  | 48   | account u32, cl_ord_id u64, symbol u32, side u8, ord_type u8, tif u8, pad u8, price i64, stop_price i64, qty u32, stp_group u32 |
 | 3    | Cancel    | 32   | account u32, cl_ord_id u64, order_id u64, symbol u32, pad u32 |
-| 4    | Replace   | 40   | account u32, cl_ord_id u64, order_id u64, symbol u32, qty u32, price i64 |
+| 4    | Replace   | 48   | account u32, cl_ord_id u64, order_id u64, symbol u32, qty u32, price i64, expected_qty u32, pad u32 |
 | 5    | Subscribe | 8    | symbol u32 |
 | 6    | Halt      | 8    | symbol u32 (admin only) |
 | 7    | Resume    | 8    | symbol u32 (admin only) |
+| 8    | Query     | 32   | same fields as Cancel |
+
+A Replace sets the order's open quantity to `qty`. With `expected_qty` non-zero, the engine first checks that the order still has exactly that much open and otherwise rejects with reason 11 (order changed): a fill that landed after the sender checked its limits would otherwise be added to the new size. A Query is answered with an event of type 12 (Status) carrying the order's open quantity in `leaves`, or reason 1 if the asker has no such open order.
 
 Prices are integer ticks (1 tick = 1 cent). `side`: 0 buy, 1 sell. `ord_type`: 0 limit, 1 market, 2 stop, 3 stop-limit. `tif`: 0 GTC, 1 IOC, 2 FOK.
 

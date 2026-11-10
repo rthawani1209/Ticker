@@ -34,6 +34,7 @@ enum class RejectReason : std::uint8_t {
     InvalidField,
     Halted,
     StopPriceCrossed,  // the stop would trigger immediately
+    OrderChanged,      // a Replace's expected open quantity no longer matches (it filled meanwhile)
 };
 
 enum class CancelReason : std::uint8_t {
@@ -47,7 +48,7 @@ enum class CancelReason : std::uint8_t {
 
 // ---- Input -------------------------------------------------------------------------
 
-enum class CmdType : std::uint8_t { New = 0, Cancel = 1, Replace = 2, Snapshot = 3, Halt = 4, Resume = 5 };
+enum class CmdType : std::uint8_t { New = 0, Cancel = 1, Replace = 2, Snapshot = 3, Halt = 4, Resume = 5, Query = 6 };
 
 struct Command {
     CmdType type{};
@@ -58,9 +59,9 @@ struct Command {
     SessionId session{};
     AccountId account{};
     std::uint64_t cl_ord_id{};
-    OrderId order_id{};  // target of Cancel/Replace
+    OrderId order_id{};  // target of Cancel/Replace/Query
     Price price{};
-    Price stop_price{};
+    Price stop_price{};  // for a Replace: the open quantity it expects, 0 = don't check
     Qty qty{};
     // Orders with the same nonzero group never trade with each other (self-trade
     // prevention across accounts, e.g. one student's portfolios in different leagues).
@@ -89,6 +90,7 @@ enum class EventType : std::uint8_t {
     Triggered,      // a stop order reached its stop price and is now live
     TradingStatus,  // public: reason 1 = halted, 0 = open; level_qty = resume time (ns) if known
     Lost,           // replay only: an event about this order never reached a gateway (order_id 0 = unknown orders)
+    Status,         // answer to a Query: leaves = open quantity, reason 1 = no such open order
 };
 
 struct Event {

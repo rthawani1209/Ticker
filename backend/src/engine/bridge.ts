@@ -147,7 +147,8 @@ export class EngineBridge extends EventEmitter {
     if (
       e.type === p.EventType.Ack ||
       e.type === p.EventType.Reject ||
-      e.type === p.EventType.Replaced
+      e.type === p.EventType.Replaced ||
+      e.type === p.EventType.Status
     ) {
       const w = this.waiters.get(e.clOrdId);
       if (w) {
@@ -190,9 +191,24 @@ export class EngineBridge extends EventEmitter {
     symbol: number,
     qty: number,
     price: number,
+    expectedQty = 0,
     timeoutMs = 2000,
   ): Promise<p.EngineEvent | null> {
-    return this.request((id) => p.replace(account, id, orderId, symbol, qty, price), timeoutMs);
+    return this.request(
+      (id) => p.replace(account, id, orderId, symbol, qty, price, expectedQty),
+      timeoutMs,
+    );
+  }
+
+  // How much of an order the engine still has open. Resolves with the Status event
+  // (reason 1 = it has no such open order), or null if it didn't answer in time.
+  query(
+    account: number,
+    orderId: number,
+    symbol: number,
+    timeoutMs = 2000,
+  ): Promise<p.EngineEvent | null> {
+    return this.request((id) => p.query(account, id, orderId, symbol), timeoutMs);
   }
 
   // Asks the engine to cancel. Success shows up as a Cancelled event for the order;

@@ -210,6 +210,78 @@ describe("orders", () => {
     expect((await patch(bid.id, { qty: 1 })).json().error).toBe("not_open");
   });
 
+  it("won't let an amend that races a fill go past a position limit", async () => {
+    const league = (
+      await b.app.inject({
+        method: "POST",
+        url: "/v1/leagues",
+        headers: auth(alice.token),
+        payload: { name: "Max 100", maxPosition: 100 },
+      })
+    ).json();
+    const bid = (
+      await place(alice.token, {
+        symbol: "ORBT",
+        side: "buy",
+        price: 309_00,
+        qty: 100,
+        league: league.id,
+      })
+    ).json();
+    expect(bid.status).toBe("open");
+    const { rows } = await b.db.query("SELECT symbol_id FROM orders WHERE id = $1", [bid.id]);
+
+    // The gateway has checked the amend against 100 open; 60 fill before the engine sees it.
+    const sim = new EngineBridge({
+      host: "127.0.0.1",
+      port: b.engine.port,
+      token: TOKEN,
+      refPrices: b.bridge.books.map(() => 100),
+      replay: false,
+    });
+    await sim.start();
+    const bridge = b.bridge as any;
+    const replace = bridge.replace.bind(bridge);
+    bridge.replace = async (...args: unknown[]) => {
+      await sim.submit({
+        account: 899_005,
+        clOrdId: 1,
+        symbol: rows[0].symbol_id,
+        side: p.Side.Sell,
+        ordType: p.OrdType.Limit,
+        tif: p.TIF.IOC,
+        price: 309_00,
+        stopPrice: 0,
+        qty: 60,
+      });
+      return replace(...args);
+    };
+    const res = await b.app.inject({
+      method: "PATCH",
+      url: `/v1/orders/${bid.id}`,
+      headers: auth(alice.token),
+      payload: { qty: 100 },
+    });
+    bridge.replace = replace;
+    sim.stop();
+    expect(res.statusCode, res.body).toBe(409);
+    expect(res.json().error).toBe("order_changed");
+
+    await b.orders.settled();
+    const after = (
+      await b.app.inject({
+        url: `/v1/orders/${bid.id}?league=${league.id}`,
+        headers: auth(alice.token),
+      })
+    ).json();
+    expect(after).toMatchObject({ qty: 100, filledQty: 60, leaves: 40 });
+    await b.app.inject({
+      method: "DELETE",
+      url: `/v1/orders/${bid.id}`,
+      headers: auth(alice.token),
+    });
+  });
+
   it("market orders default to IOC and cancel what doesn't fill", async () => {
     await place(bob.token, { symbol: "MESA", side: "sell", price: 18_810, qty: 4 });
     const res = await place(alice.token, { symbol: "MESA", side: "buy", type: "market", qty: 10 });
@@ -326,7 +398,56 @@ describe("engine events", () => {
       [String(id)],
     );
     expect(audit.rows).toHaveLength(1);
-    await b.db.query("UPDATE orders SET status = 'cancelled', leaves = 0 WHERE id = $1", [id]);
+
+    // Cancelling doesn't clear it either.
+    b.bridge.emit("private", { ...fillEvent(o, 0, 0, 0), type: p.EventType.Cancelled, symbol: 7 });
+    await b.orders.settled();
+    expect(await get()).toMatchObject({ status: "cancelled", rejectReason: "out_of_sync" });
+  });
+
+  it("flags a finished order the exchange says it lost events for", async () => {
+    const engineOrderId = 7 * 2 ** 40 + 888_889;
+    const { rows } = await b.db.query(
+      `INSERT INTO orders (user_id, portfolio_id, symbol_id, side, type, tif, price, qty, leaves, filled_qty, status, engine_order_id)
+       VALUES ($1, $2, 7, 'buy', 'limit', 'gtc', 18000, 5, 0, 3, 'filled', $3) RETURNING id`,
+      [alice.id, alice.portfolio, engineOrderId],
+    );
+    const o = { engineOrderId, id: rows[0].id, account: alice.portfolio };
+    b.bridge.emit("private", { ...fillEvent(o, 0, 0, 0), type: p.EventType.Lost, symbol: 7 });
+    await b.orders.settled();
+    const r = await b.db.query("SELECT status, reject_reason FROM orders WHERE id = $1", [o.id]);
+    expect(r.rows[0]).toEqual({ status: "filled", reject_reason: "out_of_sync" });
+  });
+
+  it("flags open orders the exchange no longer has, or has less of, after a reconnect", async () => {
+    const real = (
+      await place(alice.token, { symbol: "HELX", side: "buy", price: 56_10, qty: 3 })
+    ).json();
+    const { rows } = await b.db.query(
+      `INSERT INTO orders (user_id, portfolio_id, symbol_id, side, type, tif, price, qty, leaves, status, engine_order_id)
+       VALUES ($1, $2, 7, 'buy', 'limit', 'gtc', 18000, 5, 5, 'open', $3) RETURNING id`,
+      [alice.id, alice.portfolio, 7 * 2 ** 40 + 777_777],
+    );
+    const ghost = rows[0].id;
+    // The ledger missed 2 shares of the real order filling.
+    await b.db.query("UPDATE orders SET leaves = 5, qty = 5 WHERE id = $1", [real.id]);
+
+    expect(await b.orders.checkOpenOrders(10)).toBe(2);
+    const flags = await b.db.query(
+      "SELECT id, status, reject_reason FROM orders WHERE id = ANY($1) ORDER BY id",
+      [[real.id, ghost]],
+    );
+    expect(flags.rows.map((r) => r.reject_reason)).toEqual(["out_of_sync", "out_of_sync"]);
+    expect(flags.rows.map((r) => r.status)).toEqual(["open", "open"]);
+    // An order that matches is left alone.
+    const fine = (
+      await place(alice.token, { symbol: "HELX", side: "buy", price: 56_10, qty: 2 })
+    ).json();
+    expect(await b.orders.checkOpenOrders(10)).toBe(0);
+    for (const id of [real.id, fine.id])
+      await b.app.inject({ method: "DELETE", url: `/v1/orders/${id}`, headers: auth(alice.token) });
+    await b.db.query("UPDATE orders SET status = 'cancelled', leaves = 0 WHERE id = $1", [ghost]);
+    await new Promise((r) => setTimeout(r, 1100)); // let alice's orders-per-second limit reset
   });
 
   it("records a repeated fill only once", async () => {
@@ -395,7 +516,7 @@ describe("engine events", () => {
     const bid = (
       await place(alice.token, { symbol: "MESA", side: "buy", price: 18_700, qty: 7 })
     ).json();
-    expect(bid.status).toBe("open");
+    expect(bid.status, JSON.stringify(bid)).toBe("open");
 
     // A new engine session: the bid was placed by the old one.
     const reconnected = new Promise((resolve) => b.bridge.once("up", resolve));
@@ -530,8 +651,15 @@ describe("engine events", () => {
     });
     expect(res.statusCode).toBe(409);
     expect(res.json().error).toBe("out_of_sync");
-    const still = await b.db.query("SELECT status FROM orders WHERE id = $1", [rows[0].id]);
-    expect(still.rows[0].status).toBe("open");
+    const still = await b.db.query("SELECT status, reject_reason FROM orders WHERE id = $1", [
+      rows[0].id,
+    ]);
+    expect(still.rows[0]).toEqual({ status: "open", reject_reason: "out_of_sync" });
+    const audited = await b.db.query(
+      "SELECT detail->>'why' AS why FROM audit_log WHERE action = 'order_out_of_sync' AND detail->>'orderId' = $1",
+      [String(rows[0].id)],
+    );
+    expect(audited.rows).toEqual([{ why: "cancel" }]);
     await b.db.query("UPDATE orders SET status = 'cancelled', leaves = 0 WHERE id = $1", [
       rows[0].id,
     ]);

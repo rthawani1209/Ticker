@@ -208,6 +208,24 @@ describe("auth", () => {
     expect((await guess(rows[0].ip, "correct horse battery")).statusCode).toBe(200);
   });
 
+  it("caps a parallel burst of guesses too", async () => {
+    await signUp(b, "burst_target");
+    const codes = await Promise.all(
+      Array.from({ length: 80 }, (_, i) =>
+        b.app
+          .inject({
+            method: "POST",
+            url: "/v1/auth/login",
+            remoteAddress: `10.55.${i}.1`,
+            payload: { email: "burst_target@example.com", password: "guessing guess" },
+          })
+          .then((r) => r.statusCode),
+      ),
+    );
+    expect(codes.filter((c) => c === 401).length).toBeLessThanOrEqual(30);
+    expect(codes.filter((c) => c === 429).length).toBeGreaterThanOrEqual(50);
+  });
+
   it("does not give a made-up API key its own rate limit bucket", async () => {
     // Before, any "Bearer tk_..." header got a fresh bucket, so rotating fake keys dodged the IP limit.
     const remaining: number[] = [];

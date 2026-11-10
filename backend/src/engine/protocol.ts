@@ -11,6 +11,7 @@ export const MsgType = {
   Subscribe: 5,
   Halt: 6,
   Resume: 7,
+  Query: 8,
   LogonAck: 64,
   Event: 65,
   Stats: 66,
@@ -23,7 +24,8 @@ export const SIZES: Record<number, number> = {
   [MsgType.Logon]: 24,
   [MsgType.NewOrder]: 48,
   [MsgType.Cancel]: 32,
-  [MsgType.Replace]: 40,
+  [MsgType.Replace]: 48,
+  [MsgType.Query]: 32,
   [MsgType.Subscribe]: 8,
   [MsgType.Halt]: 8,
   [MsgType.Resume]: 8,
@@ -62,6 +64,7 @@ export enum EventType {
   Triggered,
   TradingStatus,
   Lost, // replay only: an event about this order never reached a gateway
+  Status, // answer to a Query: leaves = open quantity, reason 1 = no such open order
 }
 
 export const REJECT_REASONS = [
@@ -76,6 +79,7 @@ export const REJECT_REASONS = [
   "invalid_field",
   "halted",
   "stop_price_crossed",
+  "order_changed",
 ] as const;
 
 export const CANCEL_REASONS = [
@@ -192,7 +196,8 @@ export function cancel(account: number, clOrdId: number, orderId: number, symbol
 }
 
 // Changes a resting order's quantity and/or price. Shrinking at the same price keeps
-// its place in the queue. Waiting stops can't be amended.
+// its place in the queue. Waiting stops can't be amended. With expectedQty set, the
+// engine refuses (order_changed) if the order's open quantity is no longer that.
 export function replace(
   account: number,
   clOrdId: number,
@@ -200,6 +205,7 @@ export function replace(
   symbol: number,
   qty: number,
   price: number,
+  expectedQty = 0,
 ): Buffer {
   const b = header(MsgType.Replace);
   b.writeUInt32LE(account, 4);
@@ -208,6 +214,17 @@ export function replace(
   b.writeUInt32LE(symbol, 24);
   b.writeUInt32LE(qty, 28);
   b.writeBigInt64LE(BigInt(price), 32);
+  b.writeUInt32LE(expectedQty, 40);
+  return b;
+}
+
+// Asks how much of an order is still open; the answer is a Status event.
+export function query(account: number, clOrdId: number, orderId: number, symbol: number): Buffer {
+  const b = header(MsgType.Query);
+  b.writeUInt32LE(account, 4);
+  b.writeBigUInt64LE(BigInt(clOrdId), 8);
+  b.writeBigUInt64LE(BigInt(orderId), 16);
+  b.writeUInt32LE(symbol, 24);
   return b;
 }
 

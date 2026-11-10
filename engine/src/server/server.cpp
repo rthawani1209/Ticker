@@ -357,6 +357,16 @@ void Server::on_message(Connection& c, const wire::Header& h, const std::uint8_t
             cmd.order_id = m.order_id;
             cmd.price = m.price;
             cmd.qty = m.qty;
+            cmd.stop_price = m.expected_qty;
+            if (proxy) cmd.account = m.account;
+            break;
+        }
+        case MsgType::Query: {
+            auto m = read_as<Query>(msg);
+            cmd.type = CmdType::Query;
+            cmd.symbol = m.symbol;
+            cmd.cl_ord_id = m.cl_ord_id;
+            cmd.order_id = m.order_id;
             if (proxy) cmd.account = m.account;
             break;
         }

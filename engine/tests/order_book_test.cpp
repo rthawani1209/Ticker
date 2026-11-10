@@ -247,6 +247,50 @@ TEST_F(BookTest, CancelFromMiddleOfQueue) {
     EXPECT_EQ(fills[3].order_id, c);
 }
 
+TEST_F(BookTest, ReplaceIsRejectedIfTheOrderFilledSinceTheSenderLooked) {
+    OrderId bid = place(Side::Buy, 1000, 100);
+    send(limit(Side::Sell, 1000, 60, 2, TIF::IOC));  // 60 fill; 40 still open
+
+    // The sender still thinks 100 are open and wants 100: that would make 160 in all.
+    auto amend = replace(bid, 1000, 100);
+    amend.stop_price = 100;
+    auto evs = send(amend);
+    ASSERT_EQ(evs.size(), 1u);
+    EXPECT_EQ(evs[0].type, EventType::Reject);
+    EXPECT_EQ(evs[0].reason, std::uint8_t(RejectReason::OrderChanged));
+
+    amend.stop_price = 40;  // up to date
+    amend.qty = 30;
+    evs = send(amend);
+    EXPECT_EQ(evs.at(0).type, EventType::Replaced);
+    EXPECT_EQ(evs.at(0).leaves, 30u);
+}
+
+TEST_F(BookTest, QueryReportsHowMuchIsStillOpen) {
+    OrderId bid = place(Side::Buy, 1000, 10);
+    send(limit(Side::Sell, 1000, 4, 2, TIF::IOC));
+    Command q{};
+    q.type = CmdType::Query;
+    q.order_id = bid;
+    q.account = 1;
+    q.session = 1;
+    q.cl_ord_id = 77;
+    auto evs = send(q);
+    ASSERT_EQ(evs.size(), 1u);
+    EXPECT_EQ(evs[0].type, EventType::Status);
+    EXPECT_EQ(evs[0].reason, 0);
+    EXPECT_EQ(evs[0].leaves, 6u);
+    EXPECT_EQ(evs[0].cl_ord_id, 77u);
+
+    q.account = 2;  // someone else's order looks like no order
+    EXPECT_EQ(send(q).at(0).reason, 1);
+    q.account = 1;
+    send(cancel(bid));
+    evs = send(q);
+    EXPECT_EQ(evs.at(0).reason, 1);
+    EXPECT_EQ(evs.at(0).leaves, 0u);
+}
+
 TEST_F(BookTest, ReplaceDownKeepsPriority) {
     OrderId a = place(Side::Sell, 1000, 5, 1);
     OrderId b = place(Side::Sell, 1000, 5, 3);

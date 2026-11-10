@@ -8,6 +8,7 @@ std::size_t message_size(MsgType t) {
         case MsgType::NewOrder: return sizeof(NewOrder);
         case MsgType::Cancel: return sizeof(Cancel);
         case MsgType::Replace: return sizeof(Replace);
+        case MsgType::Query: return sizeof(Query);
         case MsgType::Subscribe:
         case MsgType::Halt:
         case MsgType::Resume: return sizeof(SymbolMsg);

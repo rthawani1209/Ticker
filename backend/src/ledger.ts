@@ -50,19 +50,21 @@ export function toLeague(r: any): League {
   };
 }
 
-// The flat part is charged once per order, on its first fill, and the percentage on
-// every fill. Charging the flat fee per fill let a seller drain a buyer's cash by
-// filling a big bid one share at a time.
+// The flat part is charged once per order, on its first fill. The percentage is worked
+// out on the order's running total, rounded up, and each fill pays the difference, so
+// an order pays the same however it's split: rounding per fill let one-share fills go
+// past what was reserved (or, at a small rate, pay nothing). Charging the flat fee per
+// fill let a seller drain a buyer's cash by filling a big bid one share at a time.
+// `before` is the value of the order's earlier fills, in cents.
 export function commission(
   league: Pick<League, "commissionCents" | "commissionBps">,
   price: number,
   qty: number,
   firstFill = true,
+  before = 0,
 ): number {
-  return (
-    (firstFill ? league.commissionCents : 0) +
-    Math.round((price * qty * league.commissionBps) / 10_000)
-  );
+  const pct = (value: number) => Math.ceil((value * league.commissionBps) / 10_000);
+  return (firstFill ? league.commissionCents : 0) + pct(before + price * qty) - pct(before);
 }
 
 // Applies one trade (dq > 0 bought, dq < 0 sold) to a position.

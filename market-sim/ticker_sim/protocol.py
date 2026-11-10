@@ -21,6 +21,7 @@ class MsgType(IntEnum):
     SUBSCRIBE = 5
     HALT = 6
     RESUME = 7
+    QUERY = 8
     LOGON_ACK = 64
     EVENT = 65
     STATS = 66
@@ -68,6 +69,7 @@ class EventType(IntEnum):
     TRIGGERED = 9
     TRADING_STATUS = 10
     LOST = 11  # only sent to gateways that log on with replay
+    STATUS = 12  # answer to a query
 
 
 class RejectReason(IntEnum):
@@ -82,6 +84,7 @@ class RejectReason(IntEnum):
     INVALID_FIELD = 8
     HALTED = 9
     STOP_PRICE_CROSSED = 10
+    ORDER_CHANGED = 11
 
 
 class ErrorCode(IntEnum):
@@ -97,7 +100,7 @@ HEADER = struct.Struct("<HBB")
 LOGON = struct.Struct("<HBBIIIQ")
 NEW_ORDER = struct.Struct("<HBBIQIBBBBqqII")
 CANCEL = struct.Struct("<HBBIQQII")
-REPLACE = struct.Struct("<HBBIQQIIq")
+REPLACE = struct.Struct("<HBBIQQIIqI4x")
 SYMBOL_MSG = struct.Struct("<HBBI")
 LOGON_ACK = struct.Struct("<HBBIII")
 EVENT = struct.Struct("<HBBI" + "BBBBIIIQQqIIQQ")
@@ -112,6 +115,7 @@ SIZES = {
     MsgType.SUBSCRIBE: SYMBOL_MSG.size,
     MsgType.HALT: SYMBOL_MSG.size,
     MsgType.RESUME: SYMBOL_MSG.size,
+    MsgType.QUERY: CANCEL.size,  # same layout
     MsgType.LOGON_ACK: LOGON_ACK.size,
     MsgType.EVENT: EVENT.size,
     MsgType.STATS: STATS.size,
@@ -186,8 +190,11 @@ def cancel(symbol: int, order_id: int, *, cl_ord_id: int = 0, account: int = 0) 
     return CANCEL.pack(*_hdr(MsgType.CANCEL), account, cl_ord_id, order_id, symbol, 0)
 
 
-def replace(symbol: int, order_id: int, qty: int, price: int, *, cl_ord_id: int = 0, account: int = 0) -> bytes:
-    return REPLACE.pack(*_hdr(MsgType.REPLACE), account, cl_ord_id, order_id, symbol, qty, price)
+def replace(
+    symbol: int, order_id: int, qty: int, price: int, *, cl_ord_id: int = 0, account: int = 0, expected_qty: int = 0
+) -> bytes:
+    # expected_qty: the open size you think it has; if it filled meanwhile the engine refuses.
+    return REPLACE.pack(*_hdr(MsgType.REPLACE), account, cl_ord_id, order_id, symbol, qty, price, expected_qty)
 
 
 def symbol_msg(t: MsgType, symbol: int) -> bytes:

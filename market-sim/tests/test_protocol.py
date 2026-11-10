@@ -8,7 +8,7 @@ def test_sizes_match_the_cpp_structs():
     assert p.LOGON.size == 24
     assert p.NEW_ORDER.size == 48
     assert p.CANCEL.size == 32
-    assert p.REPLACE.size == 40
+    assert p.REPLACE.size == 48
     assert p.SYMBOL_MSG.size == 8
     assert p.LOGON_ACK.size == 16
     assert p.EVENT.size == 72

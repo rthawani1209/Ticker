@@ -25,6 +25,7 @@ enum class MsgType : std::uint8_t {
     Subscribe = 5,  // ask for a snapshot of one symbol; also turns on market data
     Halt = 6,       // admin only
     Resume = 7,     // admin only
+    Query = 8,      // how much of an order is still open; answered with a Status event
 
     // server -> client
     LogonAck = 64,
@@ -96,8 +97,23 @@ struct Replace {
     std::uint64_t cl_ord_id;
     OrderId order_id;
     SymbolId symbol;
-    Qty qty;
+    Qty qty;  // the new open quantity
     Price price;
+    // The open quantity the sender believes the order has, or 0 to skip the check. If
+    // anything filled since, the replace is rejected (OrderChanged) instead of setting
+    // the size as if it hadn't, which could take a position past a limit.
+    Qty expected_qty;
+    std::uint32_t pad;
+};
+
+// Same layout as Cancel.
+struct Query {
+    Header h;
+    AccountId account;
+    std::uint64_t cl_ord_id;
+    OrderId order_id;
+    SymbolId symbol;
+    std::uint32_t pad;
 };
 
 // Subscribe, Halt and Resume all carry just a symbol.
@@ -141,7 +157,8 @@ static_assert(sizeof(Header) == 4);
 static_assert(sizeof(Logon) == 24);
 static_assert(sizeof(NewOrder) == 48);
 static_assert(sizeof(Cancel) == 32);
-static_assert(sizeof(Replace) == 40);
+static_assert(sizeof(Replace) == 48);
+static_assert(sizeof(Query) == 32);
 static_assert(sizeof(SymbolMsg) == 8);
 static_assert(sizeof(LogonAck) == 16);
 static_assert(sizeof(EventMsg) == 72);

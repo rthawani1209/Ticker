@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { applyTrade, rebuild } from "../src/ledger.js";
+import { applyTrade, commission, rebuild } from "../src/ledger.js";
 import { MIN_SHARPE_RETURNS, sharpeRatio } from "../src/leaderboard.js";
 import { auth, signUp, startBackend, type Backend } from "./harness.js";
 
@@ -270,6 +270,17 @@ describe("leagues", () => {
     });
     expect(res.statusCode).toBe(403);
     expect(res.json().error).toBe("league_closed");
+  });
+
+  it("charges a percentage fee the same however an order is split", () => {
+    for (const bps of [29, 4, 1]) {
+      const league = { commissionCents: 100, commissionBps: bps };
+      const whole = commission(league, 12_13, 8_220);
+      let paid = 0;
+      for (let i = 0; i < 8_220; i++) paid += commission(league, 12_13, 1, i === 0, i * 12_13);
+      expect(paid).toBe(whole); // so it never passes what was held back for the order
+      expect(whole).toBeGreaterThan(100); // and a small rate isn't rounded away
+    }
   });
 
   it("charges commission on fills and keeps positions per league", async () => {

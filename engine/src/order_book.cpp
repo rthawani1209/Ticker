@@ -30,6 +30,7 @@ void OrderBook::process(const Command& cmd, std::vector<Event>& out) {
         case CmdType::Cancel: on_cancel(cmd, out); break;
         case CmdType::Replace: on_replace(cmd, out); break;
         case CmdType::Snapshot: on_snapshot(cmd, out); break;
+        case CmdType::Query: on_query(cmd, out); break;
         case CmdType::Halt:
             if (!halted_) halt(UINT64_MAX, out);
             halt_until_ = UINT64_MAX;  // a manual halt lasts until someone resumes
@@ -402,6 +403,7 @@ void OrderBook::on_replace(const Command& cmd, std::vector<Event>& out) {
     if (o->account != cmd.account) return reject(cmd, RejectReason::NotOwner, out);
     // Waiting stops can't be amended; cancel and send a new one.
     if (o->waiting) return reject(cmd, RejectReason::InvalidField, out);
+    if (cmd.stop_price != 0 && Price(o->qty) != cmd.stop_price) return reject(cmd, RejectReason::OrderChanged, out);
 
     Event e{};
     e.type = EventType::Replaced;
@@ -435,6 +437,28 @@ void OrderBook::on_replace(const Command& cmd, std::vector<Event>& out) {
     emit_delta(in.side, old_price, out);
     execute(in, out);
     run_stops(out);
+}
+
+// Tells the asker how much of one of its orders is still open (0 and reason 1 if none).
+// A gateway that may have missed events compares this with its ledger.
+void OrderBook::on_query(const Command& cmd, std::vector<Event>& out) {
+    Event e{};
+    e.type = EventType::Status;
+    e.symbol = symbol_;
+    e.session = cmd.session;
+    e.account = cmd.account;
+    e.order_id = cmd.order_id;
+    e.cl_ord_id = cmd.cl_ord_id;
+    Order* o = by_id_.find(cmd.order_id);
+    if (!o || o->account != cmd.account) {
+        e.reason = 1;
+    } else {
+        e.side = o->side;
+        e.price = o->waiting ? 0 : o->price;  // a waiting stop has no working price yet
+        e.qty = o->qty;
+        e.leaves = o->qty;
+    }
+    out.push_back(e);
 }
 
 void OrderBook::on_snapshot(const Command& cmd, std::vector<Event>& out) {

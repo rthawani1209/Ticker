@@ -77,6 +77,7 @@ private:
     void on_cancel(const Command& cmd, std::vector<Event>& out);
     void on_replace(const Command& cmd, std::vector<Event>& out);
     void on_snapshot(const Command& cmd, std::vector<Event>& out);
+    void on_query(const Command& cmd, std::vector<Event>& out);
     void on_clock(std::uint64_t ts, std::vector<Event>& out);
     void halt(std::uint64_t until, std::vector<Event>& out);
     void resume(std::vector<Event>& out);

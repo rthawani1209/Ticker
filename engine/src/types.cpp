@@ -17,6 +17,7 @@ std::string_view to_string(EventType t) {
         case EventType::Triggered: return "Triggered";
         case EventType::TradingStatus: return "TradingStatus";
         case EventType::Lost: return "Lost";
+        case EventType::Status: return "Status";
     }
     return "?";
 }
@@ -34,6 +35,7 @@ std::string_view to_string(RejectReason r) {
         case RejectReason::InvalidField: return "InvalidField";
         case RejectReason::Halted: return "Halted";
         case RejectReason::StopPriceCrossed: return "StopPriceCrossed";
+        case RejectReason::OrderChanged: return "OrderChanged";
     }
     return "?";
 }

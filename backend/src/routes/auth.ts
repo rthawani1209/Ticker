@@ -24,7 +24,7 @@ export default async function authRoutes(app: FastifyInstance) {
   // minute per IP, 10 password guesses a minute per account from any one IP (so a
   // stranger can't lock someone out of their own account), and refreshes are counted
   // per session rather than per IP. On top of that, an account that has had
-  // ACCOUNT_GUESSES wrong passwords in 15 minutes, from any number of IPs, only takes
+  // ACCOUNT_GUESSES login attempts in 15 minutes, from any number of IPs, only takes
   // logins from IPs it has signed in from before, until the guessing slows down.
   const perIp = (max: number) => ({
     rateLimit: { max, timeWindow: 60_000, keyGenerator: (req: FastifyRequest) => req.ip },
@@ -69,17 +69,21 @@ export default async function authRoutes(app: FastifyInstance) {
     };
   }
 
-  // Lots of recent wrong passwords for this account, and this IP has never got in.
+  // Lots of recent login attempts at this account, and this IP has never got in. Each
+  // attempt is written down before it's counted (and before the password is checked),
+  // so a burst of parallel guesses can't all read the count before any of them adds to
+  // it: the attempt that commits k-th sees at least k.
   async function underAttack(userId: number, ip: string): Promise<boolean> {
+    await audit(db, userId, "login_attempt", {}, ip);
     const { rows } = await db.query(
       `SELECT
-         (SELECT count(*)::int FROM audit_log WHERE user_id = $1 AND action = 'login_failed'
+         (SELECT count(*)::int FROM audit_log WHERE user_id = $1 AND action = 'login_attempt'
             AND created_at > now() - interval '15 minutes') AS failed,
          EXISTS (SELECT 1 FROM audit_log WHERE user_id = $1 AND ip = $2
             AND action IN ('login', 'register', 'guest') AND created_at > now() - interval '90 days') AS known`,
       [userId, ip],
     );
-    return rows[0].failed >= ACCOUNT_GUESSES && !rows[0].known;
+    return rows[0].failed > ACCOUNT_GUESSES && !rows[0].known;
   }
 
   app.post("/register", { config: perIp(30) }, async (req, reply) => {

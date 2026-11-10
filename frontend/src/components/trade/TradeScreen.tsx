@@ -94,10 +94,15 @@ export function TradeScreen({ session }: { session: Session }) {
   };
 
   // B and S pick a side and jump to the quantity; Esc cancels your open orders here.
+  // None of them fire while you're typing in a field: there Esc just leaves the field.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return;
       const typing = (e.target as HTMLElement).closest("input, textarea, select");
+      if (typing) {
+        if (e.key === "Escape") (e.target as HTMLElement).blur();
+        return;
+      }
       if (e.key === "Escape") {
         const open = t.orders.filter(
           (o) => o.symbol === symbol && (o.status === "open" || o.status === "partially_filled"),
@@ -114,7 +119,6 @@ export function TradeScreen({ session }: { session: Session }) {
         });
         return;
       }
-      if (typing) return;
       const side =
         e.key === "b" || e.key === "B" ? "buy" : e.key === "s" || e.key === "S" ? "sell" : null;
       if (!side) return;
