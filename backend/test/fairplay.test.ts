@@ -144,7 +144,7 @@ describe("fair play", () => {
       shareOfB: 0.05,
       flagged: true,
     });
-    expect(collusion(trades.slice(0, 4), vol)[0]!.flagged).toBe(false); // too few trades
+    expect(collusion(trades.slice(0, 2), vol)[0]!.flagged).toBe(false); // too few trades
     expect(spoofing([])).toMatchObject({ orders: 0, flagged: false, sizeRatio: null });
     // All cancelled and none filled: nothing was gained, so it isn't spoofing.
     const pulled = Array.from({ length: 30 }, () => ({
@@ -154,5 +154,76 @@ describe("fair play", () => {
       cancelled: true,
     }));
     expect(spoofing(pulled).flagged).toBe(false);
+  });
+});
+
+describe("the evasions QA found", () => {
+  let n = 0;
+  const trade = (buyer: number, seller: number, qty: number, off: number) => ({
+    tradeId: String(++n),
+    buyer,
+    seller,
+    qty,
+    price: Math.round(100_00 * (1 + off)),
+    refPrice: 100_00,
+  });
+  const flagged = (trades: ReturnType<typeof trade>[], volume = new Map<number, number>()) =>
+    collusion(trades, volume).find((p) => p.a === 1 && p.b === 2)?.flagged;
+
+  it("catches a few big trades far off the market", () => {
+    expect(flagged(Array.from({ length: 4 }, () => trade(1, 2, 100, 0.09)))).toBe(true);
+  });
+
+  it("catches many trades just under the old 2% line", () => {
+    expect(flagged(Array.from({ length: 50 }, () => trade(1, 2, 10, 0.019)))).toBe(true);
+  });
+
+  it("catches a pair that also trades a lot with others when the prices are far off", () => {
+    const pair = Array.from({ length: 5 }, () => trade(1, 2, 100, 0.09));
+    expect(
+      flagged(
+        pair,
+        new Map([
+          [1, 1500],
+          [2, 1500],
+        ]),
+      ),
+    ).toBe(true); // share 0.33
+  });
+
+  it("weights by shares, so one-share trades at the market don't hide big ones", () => {
+    const trades = [
+      ...Array.from({ length: 5 }, () => trade(1, 2, 100, 0.09)),
+      ...Array.from({ length: 20 }, () => trade(1, 2, 1, 0)),
+    ];
+    const pair = collusion(trades, new Map())[0]!;
+    expect(pair.offMarket).toBeGreaterThan(0.08);
+    expect(pair.flagged).toBe(true);
+  });
+
+  it("still leaves classmates trading at the market alone", () => {
+    expect(flagged(Array.from({ length: 50 }, () => trade(1, 2, 10, 0.002)))).toBe(false);
+  });
+
+  const order = (side: "buy" | "sell", qty: number, filledQty: number, cancelled: boolean) => ({
+    side,
+    qty,
+    filledQty,
+    cancelled,
+  });
+
+  it("catches spoof orders that let one share trade before the cancel", () => {
+    const orders = [
+      ...Array.from({ length: 30 }, () => order("buy", 1000, 1, true)),
+      ...Array.from({ length: 2 }, () => order("sell", 20, 20, false)),
+    ];
+    expect(spoofing(orders)).toMatchObject({ flagged: true, oppositeFills: 2 });
+  });
+
+  it("doesn't flag a market maker whose big quotes sometimes fill a little", () => {
+    const orders = Array.from({ length: 100 }, (_, i) =>
+      order(i % 2 ? "buy" : "sell", 500, i % 20 === 0 ? 50 : 0, true),
+    );
+    expect(spoofing(orders).flagged).toBe(false);
   });
 });

@@ -149,10 +149,10 @@ function FairPlayChecks({ checks, onRefresh }: { checks: FairPlay | null; onRefr
 
       <h3 className="label">Trading partners</h3>
       <p className={styles.rule}>
-        Flagged when two people make {c.minTrades}+ trades together, that&apos;s at least{" "}
-        {pct(c.minShare)} of one person&apos;s trading, and their prices sit on average{" "}
-        {pct(c.minOffMarket)}+ away from the middle of the book. That&apos;s how one account hands
-        its gains to another.
+        Flagged when two people make {c.minTrades}+ trades together at prices on average{" "}
+        {pct(c.minOffMarket)}+ away from the middle of the book (weighted by shares), and
+        that&apos;s at least {pct(c.minShare)} of one person&apos;s trading or {pct(c.farOffMarket)}
+        + off. That&apos;s how one account hands its gains to another.
       </p>
       {checks.collusion.length === 0 ? (
         <p className={ui.empty}>No one in this league has traded with a classmate yet.</p>
@@ -193,10 +193,10 @@ function FairPlayChecks({ checks, onRefresh }: { checks: FairPlay | null; onRefr
 
       <h3 className="label">Order patterns</h3>
       <p className={styles.rule}>
-        Flagged when someone sends {s.minOrders}+ orders, cancels {pct(s.minCancelRate)}+ of them,
-        the cancelled ones are {s.minSizeRatio}x+ bigger than the ones that fill, and the fills are
-        on the other side. Big fake orders to move the price for a small real one is spoofing. A
-        market-making bot cancels a lot too, but at the same size it trades.
+        Flagged when someone sends {s.minOrders}+ orders, pulls {pct(s.minCancelRate)}+ of them with
+        less than a tenth filled, the pulled ones are {s.minSizeRatio}x+ bigger than the ones that
+        fill, and the fills are on the other side. Big fake orders to move the price for a small
+        real one is spoofing. A market-making bot cancels a lot too, but at the same size it trades.
       </p>
       {checks.spoofing.length === 0 ? (
         <p className={ui.empty}>No orders yet.</p>

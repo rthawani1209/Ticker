@@ -191,6 +191,7 @@ export function useTrading(token: string, symbol: string, league?: number) {
     fills,
     placeOrder,
     cancelOrder,
+    reload: reloadMine,
   };
 }
 

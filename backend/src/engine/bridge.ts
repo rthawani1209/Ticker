@@ -140,7 +140,11 @@ export class EngineBridge extends EventEmitter {
       this.emit("market", e);
       return;
     }
-    if (e.type === p.EventType.Ack || e.type === p.EventType.Reject) {
+    if (
+      e.type === p.EventType.Ack ||
+      e.type === p.EventType.Reject ||
+      e.type === p.EventType.Replaced
+    ) {
       const w = this.waiters.get(e.clOrdId);
       if (w) {
         clearTimeout(w.timer);
@@ -174,16 +178,17 @@ export class EngineBridge extends EventEmitter {
     });
   }
 
-  // Fire and forget: the result shows up as a Replaced (or Reject) event.
+  // Asks the engine to change a resting order's price and remaining size. Resolves
+  // with the Replaced or Reject event, or null if neither came back in time.
   replace(
     account: number,
-    clOrdId: number,
     orderId: number,
     symbol: number,
     qty: number,
     price: number,
-  ): void {
-    this.write(p.replace(account, clOrdId, orderId, symbol, qty, price));
+    timeoutMs = 2000,
+  ): Promise<p.EngineEvent | null> {
+    return this.request((id) => p.replace(account, id, orderId, symbol, qty, price), timeoutMs);
   }
 
   // Asks the engine to cancel. Success shows up as a Cancelled event for the order;
@@ -195,10 +200,15 @@ export class EngineBridge extends EventEmitter {
     symbol: number,
     timeoutMs = 2000,
   ): Promise<p.EngineEvent | null> {
+    return this.request((id) => p.cancel(account, id, orderId, symbol), timeoutMs);
+  }
+
+  // Sends a cancel or replace under its own id and waits for the engine's answer to it.
+  private request(msg: (id: number) => Buffer, timeoutMs: number): Promise<p.EngineEvent | null> {
     const id = this.nextCancelId++;
     return new Promise((resolve, reject) => {
       try {
-        this.write(p.cancel(account, id, orderId, symbol));
+        this.write(msg(id));
       } catch (err) {
         reject(err);
         return;

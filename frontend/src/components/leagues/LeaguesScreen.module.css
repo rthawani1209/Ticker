@@ -355,3 +355,18 @@
     padding-right: var(--s-4) !important;
   }
 }
+
+.types {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2) var(--s-4);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.types legend {
+  width: 100%;
+  margin-bottom: var(--s-2);
+}

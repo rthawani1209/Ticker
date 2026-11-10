@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import type { Fill, Order, Portfolio } from "@/lib/api";
 import { direction, formatMoney, formatPrice } from "@/lib/format";
+import { amendChange } from "@/lib/ticket";
 
 import styles from "./Blotter.module.css";
 
@@ -14,8 +15,14 @@ interface Props {
   orders: Order[];
   fills: Fill[];
   onCancel: (id: number) => void;
+  // Resolves with an error to show, or null when the order was changed.
+  onAmend: (id: number, change: { price?: number; qty?: number }) => Promise<string | null>;
   onPick: (symbol: string) => void;
 }
+
+// Only plain resting limit orders: the engine can't amend a waiting stop, and a
+// bracket's exits are sized by the gateway.
+const amendable = (o: Order) => o.type === "limit" && o.parentId === null && o.takeProfit === null;
 
 const time = new Intl.DateTimeFormat("en-US", {
   hour: "2-digit",
@@ -33,8 +40,22 @@ function describe(o: Order): string {
 }
 
 // Positions, open orders and fills under the chart.
-export function Blotter({ portfolio, orders, fills, onCancel, onPick }: Props) {
+export function Blotter({ portfolio, orders, fills, onCancel, onAmend, onPick }: Props) {
   const [tab, setTab] = useState<Tab>("positions");
+  const [edit, setEdit] = useState<{ id: number; price: string; qty: string } | null>(null);
+  const [editError, setEditError] = useState<string | null>(null);
+  const startEdit = (o: Order) => {
+    setEditError(null);
+    setEdit({ id: o.id, price: (o.price! / 100).toFixed(2), qty: String(o.leaves) });
+  };
+  const save = async (o: Order) => {
+    if (!edit) return;
+    const change = amendChange(edit.price, edit.qty, { price: o.price!, leaves: o.leaves });
+    if (typeof change === "string") return setEditError(change);
+    const error = await onAmend(o.id, change);
+    if (error) setEditError(error);
+    else setEdit(null);
+  };
   const positions = portfolio?.positions.filter((p) => p.qty !== 0) ?? [];
   const tabs: { id: Tab; label: string; count?: number }[] = [
     { id: "positions", label: "Positions", count: positions.length },
@@ -95,30 +116,94 @@ export function Blotter({ portfolio, orders, fills, onCancel, onPick }: Props) {
           <Table
             empty="No open orders."
             head={["Symbol", "Side", "Price", "Filled", "Status", ""]}
-            rows={orders.map((o) => ({
-              key: String(o.id),
-              cells: [
-                <span key="s">
-                  {o.symbol}
-                  {o.parentId !== null && <span className={styles.tag}>exit</span>}
-                  {o.takeProfit !== null && <span className={styles.tag}>bracket</span>}
-                </span>,
-                <span key="d" data-side={o.side} className={styles.side}>
-                  {o.side}
-                </span>,
-                describe(o),
-                `${o.filledQty}/${o.qty}`,
-                o.status.replace("_", " "),
-                <button
-                  key="c"
-                  type="button"
-                  className={styles.cancel}
-                  onClick={() => onCancel(o.id)}
-                >
-                  Cancel
-                </button>,
-              ],
-            }))}
+            rows={orders.map((o) => {
+              const editing = edit?.id === o.id;
+              return {
+                key: String(o.id),
+                cells: [
+                  <span key="s">
+                    {o.symbol}
+                    {o.parentId !== null && <span className={styles.tag}>exit</span>}
+                    {o.takeProfit !== null && <span className={styles.tag}>bracket</span>}
+                  </span>,
+                  <span key="d" data-side={o.side} className={styles.side}>
+                    {o.side}
+                  </span>,
+                  editing ? (
+                    <input
+                      key="p"
+                      className={styles.edit}
+                      inputMode="decimal"
+                      aria-label="New price"
+                      value={edit.price}
+                      onChange={(e) => setEdit({ ...edit, price: e.target.value })}
+                      onKeyDown={(e) => e.key === "Enter" && save(o)}
+                    />
+                  ) : (
+                    describe(o)
+                  ),
+                  editing ? (
+                    <span key="q" className={styles.editQty}>
+                      {o.filledQty} +
+                      <input
+                        className={styles.edit}
+                        inputMode="numeric"
+                        aria-label="Shares still to fill"
+                        value={edit.qty}
+                        onChange={(e) =>
+                          setEdit({ ...edit, qty: e.target.value.replace(/\D/g, "") })
+                        }
+                        onKeyDown={(e) => e.key === "Enter" && save(o)}
+                      />
+                    </span>
+                  ) : (
+                    `${o.filledQty}/${o.qty}`
+                  ),
+                  editing && editError ? (
+                    <span key="e" className={styles.editError} role="alert">
+                      {editError}
+                    </span>
+                  ) : (
+                    o.status.replace("_", " ")
+                  ),
+                  <span key="c" className={styles.actions}>
+                    {editing ? (
+                      <>
+                        <button type="button" className={styles.save} onClick={() => save(o)}>
+                          Save
+                        </button>
+                        <button
+                          type="button"
+                          className={styles.cancel}
+                          onClick={() => setEdit(null)}
+                        >
+                          Back
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        {amendable(o) && (
+                          <button
+                            type="button"
+                            className={styles.amend}
+                            onClick={() => startEdit(o)}
+                          >
+                            Amend
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          className={styles.cancel}
+                          onClick={() => onCancel(o.id)}
+                        >
+                          Cancel
+                        </button>
+                      </>
+                    )}
+                  </span>,
+                ],
+              };
+            })}
           />
         )}
         {tab === "fills" && (

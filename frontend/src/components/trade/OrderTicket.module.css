@@ -192,3 +192,8 @@
 .keys kbd:first-child {
   margin-left: 0;
 }
+
+.type:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}

@@ -362,6 +362,74 @@ export class OrderService extends EventEmitter {
     }
   }
 
+  // Amends a resting limit order: a new price, a new open quantity, or both. Same
+  // checks as a new order, with this order's old reservation left out. Keeping the
+  // price and shrinking keeps its place in the queue; anything else goes to the back.
+  async replace(
+    userId: number,
+    orderId: number,
+    change: { price?: number; qty?: number },
+  ): Promise<Order> {
+    if (!this.bridge.connected)
+      throw new ApiError(503, "exchange_down", "the exchange is not connected");
+    let target = { account: 0, engineId: 0, symbolId: 0, qty: 0, price: 0 };
+    await this.tx(async (client) => {
+      const { rows } = await client.query(
+        `SELECT o.id, o.portfolio_id, o.symbol_id, o.side, o.type, o.tif, o.price, o.leaves, o.status,
+                o.engine_order_id, o.parent_id, o.take_profit, pf.cash, ${LEAGUE_COLUMNS}
+         FROM orders o JOIN portfolios pf ON pf.id = o.portfolio_id JOIN leagues l ON l.id = pf.league_id
+         WHERE o.id = $1 AND o.user_id = $2 FOR UPDATE OF pf`,
+        [orderId, userId],
+      );
+      const o = rows[0];
+      if (!o) throw new ApiError(404, "not_found", "no such order");
+      if (!["open", "partially_filled"].includes(o.status) || !o.engine_order_id)
+        throw new ApiError(409, "not_open", `order is ${o.status}`);
+      if (o.type !== "limit")
+        throw new ApiError(409, "not_amendable", "only resting limit orders can be amended");
+      if (o.parent_id !== null || o.take_profit !== null)
+        throw new ApiError(
+          409,
+          "not_amendable",
+          "bracket orders can't be amended; cancel and re-send",
+        );
+      const price = change.price ?? Number(o.price);
+      const qty = change.qty ?? o.leaves;
+      await checkOrder(
+        client,
+        toLeague(o),
+        { id: o.portfolio_id, cash: o.cash },
+        { symbolId: o.symbol_id, side: o.side, type: "limit", tif: o.tif, price, qty },
+        this.marks,
+        new Date(),
+        orderId,
+      );
+      target = {
+        account: o.portfolio_id,
+        engineId: o.engine_order_id,
+        symbolId: o.symbol_id,
+        qty,
+        price,
+      };
+    });
+    const reply = await this.bridge.replace(
+      target.account,
+      target.engineId,
+      target.symbolId,
+      target.qty,
+      target.price,
+    );
+    await this.settled();
+    if (!reply)
+      throw new ApiError(504, "replace_pending", "the exchange hasn't confirmed the change yet");
+    if (reply.type === p.EventType.Reject) {
+      const reason = p.REJECT_REASONS[reply.reason] ?? "rejected";
+      if (reason === "unknown_order") throw new ApiError(409, "not_open", "order already finished");
+      throw new ApiError(422, "replace_rejected", reason.replaceAll("_", " "));
+    }
+    return (await this.get(userId, orderId))!;
+  }
+
   // Pulls every working order sent with one API key (or with any key), for revoking a
   // key and for the admin kill switch. Returns how many it cancelled.
   async cancelBotOrders(apiKeyId?: number): Promise<number> {
@@ -629,8 +697,10 @@ export class OrderService extends EventEmitter {
         break;
       }
       case p.EventType.Replaced: {
+        // The engine's qty is what's left to fill; the order's size is that plus what filled.
         const r = await this.db.query(
-          `UPDATE orders SET price = $2, leaves = $3, updated_at = now() WHERE engine_order_id = $1 RETURNING id, user_id`,
+          `UPDATE orders SET price = $2, leaves = $3, qty = filled_qty + $3, updated_at = now()
+           WHERE engine_order_id = $1 RETURNING id, user_id`,
           [e.orderId, e.price, e.qty],
         );
         ({ id, user_id: userId } = r.rows[0] ?? {});

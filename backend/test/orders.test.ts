@@ -138,6 +138,77 @@ describe("orders", () => {
     });
   });
 
+  it("holds a stop-limit until the stop trades, then works it as a limit", async () => {
+    const dave = await signUp(b, "dave");
+    const sl = (
+      await place(alice.token, {
+        symbol: "VYNE",
+        side: "buy",
+        type: "stop_limit",
+        stopPrice: 98_00,
+        price: 98_50,
+        qty: 5,
+      })
+    ).json();
+    expect(sl).toMatchObject({
+      type: "stop_limit",
+      status: "open",
+      stopPrice: 98_00,
+      price: 98_50,
+    });
+
+    // An ask below the limit doesn't fill it while the stop is waiting.
+    await place(bob.token, { symbol: "VYNE", side: "sell", price: 98_40, qty: 5 });
+    await b.orders.settled();
+    const get = async () =>
+      (await b.app.inject({ url: `/v1/orders/${sl.id}`, headers: auth(alice.token) })).json();
+    expect((await get()).filledQty).toBe(0);
+
+    // A trade at 98.00 sets it off; it then buys the 98.40 ask.
+    await place(bob.token, { symbol: "VYNE", side: "sell", price: 98_00, qty: 1 });
+    await place(dave.token, { symbol: "VYNE", side: "buy", price: 98_00, qty: 1, tif: "ioc" });
+    await b.orders.settled();
+    expect(await get()).toMatchObject({ status: "filled", filledQty: 5 });
+  });
+
+  it("amends a resting order's price and size", async () => {
+    const patch = (id: number, payload: object, token = alice.token) =>
+      b.app.inject({ method: "PATCH", url: `/v1/orders/${id}`, headers: auth(token), payload });
+    const bid = (
+      await place(alice.token, { symbol: "HELX", side: "buy", price: 56_00, qty: 10 })
+    ).json();
+
+    // Smaller at the same price: the engine shrinks it in place.
+    const smaller = await patch(bid.id, { qty: 6 });
+    expect(smaller.statusCode, smaller.body).toBe(200);
+    expect(smaller.json()).toMatchObject({ status: "open", qty: 6, leaves: 6, price: 56_00 });
+
+    // A new price that crosses an ask trades straight away.
+    await place(bob.token, { symbol: "HELX", side: "sell", price: 57_00, qty: 4 });
+    const up = await patch(bid.id, { price: 57_00 });
+    expect(up.json()).toMatchObject({ status: "partially_filled", filledQty: 4, leaves: 2 });
+
+    // Bigger: the size counts what's filled plus the new open amount.
+    const bigger = await patch(bid.id, { qty: 8 });
+    expect(bigger.json()).toMatchObject({ qty: 12, filledQty: 4, leaves: 8 });
+
+    // Same checks as a new order, and not someone else's.
+    expect((await patch(bid.id, { qty: 90_000 })).json().error).toBe("insufficient_funds");
+    expect((await patch(bid.id, { qty: 1 }, bob.token)).statusCode).toBe(404);
+    expect((await patch(bid.id, {})).statusCode).toBe(400);
+    expect((await patch(bid.id, { price: 20_00 })).json()).toMatchObject({
+      error: "replace_rejected",
+      message: "price band",
+    });
+
+    await b.app.inject({
+      method: "DELETE",
+      url: `/v1/orders/${bid.id}`,
+      headers: auth(alice.token),
+    });
+    expect((await patch(bid.id, { qty: 1 })).json().error).toBe("not_open");
+  });
+
   it("market orders default to IOC and cancel what doesn't fill", async () => {
     await place(bob.token, { symbol: "MESA", side: "sell", price: 18_810, qty: 4 });
     const res = await place(alice.token, { symbol: "MESA", side: "buy", type: "market", qty: 10 });

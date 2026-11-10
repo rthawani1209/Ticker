@@ -97,6 +97,38 @@ export default async function orderRoutes(app: FastifyInstance) {
     return order ?? reply.code(404).send({ error: "not_found", message: "no such order" });
   });
 
+  // Amend a resting limit order: {"price": cents} and/or {"qty": shares still to fill}.
+  app.patch("/:id", { config: orderLimit }, async (req) => {
+    const { id } = Id.parse(req.params);
+    const body = z
+      .object({
+        price: z.number().int().positive().optional(),
+        qty: z.number().int().positive().max(100_000).optional(),
+      })
+      .strict()
+      .refine((b) => b.price !== undefined || b.qty !== undefined, "send a price, a qty or both")
+      .parse(req.body);
+    const order = await ownOrder(req);
+    if (!order) throw new ApiError(404, "not_found", "no such order");
+    const key = req.user.apiKey;
+    if (key && body.qty !== undefined && body.qty > key.maxOrderQty)
+      throw new ApiError(
+        422,
+        "size_cap",
+        `this key can send at most ${key.maxOrderQty} shares an order`,
+      );
+    const sym = symbolsByTicker.get(order.symbol)!;
+    if (body.price !== undefined && body.price >= sym.maxPrice)
+      throw new ApiError(
+        422,
+        "invalid_price",
+        `${order.symbol} prices must be below $${(sym.maxPrice / 100).toFixed(2)}`,
+      );
+    const amended = await orders.replace(req.user.userId, id, body);
+    await audit(db, req.user.userId, "order_replace", { orderId: id, ...body }, req.ip);
+    return amended;
+  });
+
   app.delete("/:id", { config: orderLimit }, async (req) => {
     const { id } = Id.parse(req.params);
     if (!(await ownOrder(req))) throw new ApiError(404, "not_found", "no such order");

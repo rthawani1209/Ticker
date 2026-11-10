@@ -1,26 +1,31 @@
 // Fair-play checks a professor can run over a league. They flag, they don't punish:
 // each flag comes with the numbers behind it so a person can judge.
 //
-// Collusion: two people who mostly trade with each other, at prices away from the
-// rest of the market. That's how one account hands its gains to another. Trading
-// with a classmate now and then at the market price is normal and isn't flagged.
+// Collusion: two people who trade with each other at prices away from the rest of
+// the market. That's how one account hands its gains to another. The distance is
+// weighted by shares, so a few big off-market trades can't hide among many one-share
+// trades at the market price. Trading with a classmate at the market price is normal
+// and isn't flagged, however often it happens.
 //
-// Spoofing: big orders that are nearly always cancelled, while the same person's
-// small orders on the other side get filled. The big orders make the book look
-// heavy on one side to move the price for the real trade. A market-making bot
-// cancels a lot too, but its cancelled and filled orders are the same size.
+// Spoofing: big orders that are nearly always pulled before they trade, while the same
+// person's small orders on the other side get filled. The big orders make the book look
+// heavy on one side to move the price for the real trade. An order counts as pulled if
+// less than a tenth of it filled, so letting one share trade first doesn't hide it. A
+// market-making bot cancels a lot too, but its pulled and its filled orders are the
+// same size.
 import type { Db } from "./db/pool.js";
 
 export const COLLUSION = {
-  minTrades: 5, // trades between the two of them
-  minShare: 0.5, // of either one's traded shares
-  minOffMarket: 0.02, // average distance of their prices from the book's middle
+  minTrades: 3, // trades between the two of them
+  minOffMarket: 0.01, // share-weighted distance of their prices from the book's middle
+  minShare: 0.25, // of either one's traded shares...
+  farOffMarket: 0.05, // ...unless their prices are this far off, when any share counts
 };
 
 export const SPOOFING = {
   minOrders: 20,
-  minCancelRate: 0.9,
-  minSizeRatio: 5, // average cancelled order size / average filled order size
+  minCancelRate: 0.9, // of their orders, pulled with less than a tenth filled
+  minSizeRatio: 5, // average size of pulled orders / of orders that mostly filled
 };
 
 export interface Trade {
@@ -39,7 +44,7 @@ export interface PairReport {
   shares: number;
   shareOfA: number;
   shareOfB: number;
-  offMarket: number | null; // average |price - ref| / ref
+  offMarket: number | null; // share-weighted average |price - ref| / ref
   flagged: boolean;
 }
 
@@ -47,23 +52,27 @@ export interface PairReport {
 export function collusion(trades: Trade[], volume: Map<number, number>): PairReport[] {
   const pairs = new Map<
     string,
-    { a: number; b: number; trades: number; shares: number; off: number[] }
+    { a: number; b: number; trades: number; shares: number; offShares: number; offSum: number }
   >();
   for (const t of trades) {
     if (t.buyer === t.seller) continue;
     const [a, b] = t.buyer < t.seller ? [t.buyer, t.seller] : [t.seller, t.buyer];
     const key = `${a}:${b}`;
-    const p = pairs.get(key) ?? { a, b, trades: 0, shares: 0, off: [] };
+    const p = pairs.get(key) ?? { a, b, trades: 0, shares: 0, offShares: 0, offSum: 0 };
     p.trades++;
     p.shares += t.qty;
-    if (t.refPrice) p.off.push(Math.abs(t.price - t.refPrice) / t.refPrice);
+    if (t.refPrice) {
+      p.offShares += t.qty;
+      p.offSum += (t.qty * Math.abs(t.price - t.refPrice)) / t.refPrice;
+    }
     pairs.set(key, p);
   }
   return [...pairs.values()]
     .map((p) => {
       const shareOfA = p.shares / (volume.get(p.a) || p.shares);
       const shareOfB = p.shares / (volume.get(p.b) || p.shares);
-      const offMarket = p.off.length ? p.off.reduce((s, x) => s + x, 0) / p.off.length : null;
+      const offMarket = p.offShares ? p.offSum / p.offShares : null;
+      const off = offMarket ?? 0;
       return {
         a: p.a,
         b: p.b,
@@ -74,8 +83,8 @@ export function collusion(trades: Trade[], volume: Map<number, number>): PairRep
         offMarket,
         flagged:
           p.trades >= COLLUSION.minTrades &&
-          Math.max(shareOfA, shareOfB) >= COLLUSION.minShare &&
-          (offMarket ?? 0) >= COLLUSION.minOffMarket,
+          off >= COLLUSION.minOffMarket &&
+          (Math.max(shareOfA, shareOfB) >= COLLUSION.minShare || off >= COLLUSION.farOffMarket),
       };
     })
     .sort((x, y) => Number(y.flagged) - Number(x.flagged) || y.shares - x.shares);
@@ -90,9 +99,9 @@ export interface OrderRow {
 
 export interface SpoofReport {
   orders: number;
-  cancelRate: number;
-  avgCancelledQty: number;
-  avgFilledQty: number;
+  cancelRate: number; // share of orders pulled with less than a tenth filled
+  avgCancelledQty: number; // average size of those orders
+  avgFilledQty: number; // average size of orders at least half filled
   sizeRatio: number | null;
   // Fills on the side opposite most of the cancelled shares.
   oppositeFills: number;
@@ -100,13 +109,20 @@ export interface SpoofReport {
 }
 
 export function spoofing(orders: OrderRow[]): SpoofReport {
-  const cancelled = orders.filter((o) => o.cancelled && o.filledQty === 0);
-  const filled = orders.filter((o) => o.filledQty > 0);
+  // Order sizes are compared, not filled amounts: a market maker whose 500-share
+  // quotes sometimes fill 50 isn't sending small real orders.
+  const cancelled = orders.filter((o) => o.cancelled && o.filledQty * 10 < o.qty);
+  const filled = orders.filter((o) => o.filledQty * 2 >= o.qty);
   const avg = (xs: number[]) => (xs.length ? xs.reduce((s, x) => s + x, 0) / xs.length : 0);
   const avgCancelledQty = avg(cancelled.map((o) => o.qty));
-  const avgFilledQty = avg(filled.map((o) => o.filledQty));
-  const cancelledBuys = cancelled.filter((o) => o.side === "buy").reduce((s, o) => s + o.qty, 0);
-  const cancelledSells = cancelled.filter((o) => o.side === "sell").reduce((s, o) => s + o.qty, 0);
+  const avgFilledQty = avg(filled.map((o) => o.qty));
+  const pulled = (o: OrderRow) => o.qty - o.filledQty;
+  const cancelledBuys = cancelled
+    .filter((o) => o.side === "buy")
+    .reduce((s, o) => s + pulled(o), 0);
+  const cancelledSells = cancelled
+    .filter((o) => o.side === "sell")
+    .reduce((s, o) => s + pulled(o), 0);
   const heavySide = cancelledBuys >= cancelledSells ? "buy" : "sell";
   const oppositeFills = filled.filter((o) => o.side !== heavySide).length;
   const cancelRate = orders.length ? cancelled.length / orders.length : 0;

@@ -178,6 +178,7 @@ export async function checkOrder(
   o: OrderInput,
   marks: Marks,
   now = new Date(),
+  replacing?: number, // an order being amended: its old size and price no longer count
 ): Promise<void> {
   if (now < league.startsAt)
     throw new ApiError(403, "league_closed", "the league hasn't started yet");
@@ -208,8 +209,9 @@ export async function checkOrder(
     ]),
     client.query(
       `SELECT symbol_id, side, type, price, stop_price, leaves, filled_qty, parent_id FROM orders
-       WHERE portfolio_id = $1 AND status IN ('pending', 'open', 'partially_filled')`,
-      [portfolio.id],
+       WHERE portfolio_id = $1 AND status IN ('pending', 'open', 'partially_filled')
+         AND id IS DISTINCT FROM $2`,
+      [portfolio.id, replacing ?? null],
     ),
   ]);
   const held = new Map<number, number>(positions.rows.map((r) => [r.symbol_id, r.qty]));

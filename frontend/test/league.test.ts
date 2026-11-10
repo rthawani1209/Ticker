@@ -32,10 +32,13 @@ describe("new league form", () => {
       body: {
         name: "Econ 101",
         startingCash: 100_000_00,
+        startsAt: undefined,
         endsAt: undefined,
         commissionCents: 0,
+        commissionBps: 0,
         allowShort: true,
         maxPosition: null,
+        allowedTypes: ["limit", "market", "stop", "stop_limit"],
       },
     });
   });
@@ -71,6 +74,32 @@ describe("new league form", () => {
     expect(field({ commission: "250" })).toBe("commission");
     expect(field({ maxPosition: "1.5" })).toBe("maxPosition");
     expect(field({ commission: "0" })).toBeNull();
+    expect(field({ startsOn: "2026-11-05" })).toBe("startsOn");
+    expect(field({ startsOn: "2026-11-10", endsOn: "2026-11-09" })).toBe("endsOn");
+    expect(field({ commissionPct: "12" })).toBe("commissionPct");
+    expect(field({ commissionPct: "0.105" })).toBe("commissionPct");
+    expect(field({ allowedTypes: [] })).toBe("allowedTypes");
+  });
+
+  it("reads a later start, a percentage fee and the allowed order types", () => {
+    const r = readLeagueForm(
+      {
+        ...ok,
+        startsOn: "2026-11-10",
+        endsOn: "2026-11-20",
+        commissionPct: "0.25%",
+        allowedTypes: ["limit", "stop"],
+      },
+      now,
+    );
+    expect(r.ok && r.body).toMatchObject({
+      startsAt: new Date("2026-11-10T00:00:00").toISOString(),
+      commissionBps: 25,
+      allowedTypes: ["limit", "stop"],
+    });
+    // Today means right away.
+    const today = readLeagueForm({ ...ok, startsOn: "2026-11-06" }, now);
+    expect(today.ok && today.body.startsAt).toBeUndefined();
   });
 });
 

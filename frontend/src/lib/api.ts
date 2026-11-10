@@ -180,10 +180,13 @@ export interface League {
 export interface NewLeague {
   name: string;
   startingCash: number;
+  startsAt?: string;
   endsAt?: string;
   commissionCents: number;
+  commissionBps: number;
   allowShort: boolean;
   maxPosition: number | null;
+  allowedTypes: OrderType[];
 }
 
 export interface Standing {
@@ -263,6 +266,9 @@ export const me = {
     }),
   fills: (token: string, league?: number) =>
     call<Fill[]>(`/v1/fills?limit=50${league ? `&league=${league}` : ""}`, { token }),
+  // A new price and/or a new open quantity for a resting limit order.
+  amend: (token: string, id: number, change: { price?: number; qty?: number }) =>
+    call<Order>(`/v1/orders/${id}`, { method: "PATCH", token, body: JSON.stringify(change) }),
 };
 
 export const leagues = {
@@ -339,7 +345,7 @@ export interface OrderCheck {
 
 export interface FairPlay {
   thresholds: {
-    collusion: { minTrades: number; minShare: number; minOffMarket: number };
+    collusion: { minTrades: number; minShare: number; minOffMarket: number; farOffMarket: number };
     spoofing: { minOrders: number; minCancelRate: number; minSizeRatio: number };
   };
   collusion: PairCheck[];

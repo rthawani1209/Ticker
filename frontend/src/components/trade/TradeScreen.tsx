@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { AppHeader } from "@/components/app/AppHeader";
 import { PriceCell } from "@/components/ui/PriceCell";
-import { leagues, type League, type NewOrder, type Session, type Side } from "@/lib/api";
+import { leagues, me, type League, type NewOrder, type Session, type Side } from "@/lib/api";
 import { formatChange, formatPrice } from "@/lib/format";
 import { useQueryParam } from "@/lib/query";
 import type { Ticket } from "@/lib/ticket";
@@ -202,6 +202,15 @@ export function TradeScreen({ session }: { session: Session }) {
                 if (!r.ok) setNotice({ ok: false, text: `Not cancelled: ${r.message}` });
               })
             }
+            onAmend={async (id, change) => {
+              try {
+                await me.amend(session.accessToken, id, change);
+                t.reload();
+                return null;
+              } catch (err) {
+                return (err as Error).message;
+              }
+            }}
             onPick={pick}
           />
         </div>
@@ -232,6 +241,7 @@ export function TradeScreen({ session }: { session: Session }) {
             last={last}
             cash={t.portfolio?.cash ?? null}
             ticket={ticket}
+            allowed={leagueList.find((l) => l.id === league)?.allowedTypes}
             onChange={setTicket}
             onSubmit={send}
           />

@@ -10,7 +10,14 @@ import { Button } from "@/components/ui/Button";
 import { ApiError, leagues as api, type League, type Session, type Standing } from "@/lib/api";
 import { direction, formatMoney } from "@/lib/format";
 import { useQueryParam } from "@/lib/query";
-import { codeFrom, EMPTY_FORM, formatPct, inviteLink, readLeagueForm } from "@/lib/league";
+import {
+  codeFrom,
+  EMPTY_FORM,
+  formatPct,
+  inviteLink,
+  ORDER_TYPES,
+  readLeagueForm,
+} from "@/lib/league";
 
 import { ClassTools, MyAssignments } from "./ClassTools";
 import styles from "./LeaguesScreen.module.css";
@@ -248,7 +255,9 @@ function LeagueDetail({ token, league, me }: { token: string; league: League; me
       : "no commission",
     league.allowShort ? `shorting on (${league.marginBps / 100}% margin)` : "no shorting",
     league.maxPosition ? `max ${league.maxPosition.toLocaleString("en-US")} shares` : null,
-    league.allowedTypes.length < 4 ? league.allowedTypes.join(", ").replace(/_/g, " ") : null,
+    league.allowedTypes.length < 4
+      ? `only ${league.allowedTypes.join(", ").replace(/_/g, " ")} orders`
+      : null,
   ].filter(Boolean) as string[];
 
   return (
@@ -398,7 +407,7 @@ function CreateLeague({ token, onCreated }: { token: string; onCreated: (l: Leag
     >
       <header>
         <span className="label">New league</span>
-        <span className="mono">starts now · everyone trades the same market</span>
+        <span className="mono">everyone trades the same market</span>
       </header>
       <div className={styles.fields}>
         <label className={styles.wide}>
@@ -423,6 +432,15 @@ function CreateLeague({ token, onCreated }: { token: string; onCreated: (l: Leag
           {err("startingCash")}
         </label>
         <label>
+          <span className="label">Starts on (optional)</span>
+          <input
+            type="date"
+            value={form.startsOn}
+            onChange={(e) => set("startsOn", e.target.value)}
+          />
+          {err("startsOn")}
+        </label>
+        <label>
           <span className="label">Ends on (optional)</span>
           <input type="date" value={form.endsOn} onChange={(e) => set("endsOn", e.target.value)} />
           {err("endsOn")}
@@ -437,6 +455,17 @@ function CreateLeague({ token, onCreated }: { token: string; onCreated: (l: Leag
             placeholder="0"
           />
           {err("commission")}
+        </label>
+        <label>
+          <span className="label">Plus % of each fill</span>
+          <input
+            className="mono"
+            inputMode="decimal"
+            value={form.commissionPct}
+            onChange={(e) => set("commissionPct", e.target.value)}
+            placeholder="0"
+          />
+          {err("commissionPct")}
         </label>
         <label>
           <span className="label">Max shares per stock</span>
@@ -457,6 +486,29 @@ function CreateLeague({ token, onCreated }: { token: string; onCreated: (l: Leag
           />
           <span>Allow short selling</span>
         </label>
+        <fieldset className={styles.types}>
+          <legend className="label">Order types allowed</legend>
+          {ORDER_TYPES.map((t) => (
+            <label key={t.value} className={styles.check}>
+              <input
+                type="checkbox"
+                checked={form.allowedTypes.includes(t.value)}
+                onChange={(e) =>
+                  set(
+                    "allowedTypes",
+                    e.target.checked
+                      ? ORDER_TYPES.map((o) => o.value).filter(
+                          (v) => v === t.value || form.allowedTypes.includes(v),
+                        )
+                      : form.allowedTypes.filter((v) => v !== t.value),
+                  )
+                }
+              />
+              <span>{t.label}</span>
+            </label>
+          ))}
+          {err("allowedTypes")}
+        </fieldset>
       </div>
       <footer className={styles.createFoot}>
         {err("form")}

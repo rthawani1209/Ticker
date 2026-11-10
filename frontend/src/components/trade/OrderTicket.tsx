@@ -2,6 +2,7 @@
 
 import { forwardRef, useState, type FormEvent } from "react";
 
+import type { OrderType } from "@/lib/api";
 import { formatMoney, formatPrice, parseDollars } from "@/lib/format";
 import { ticketOrder, type Ticket, type TicketType } from "@/lib/ticket";
 
@@ -12,6 +13,7 @@ interface Props {
   last: number;
   cash: number | null;
   ticket: Ticket;
+  allowed?: OrderType[]; // the league's order types; all of them when not given
   onChange: (t: Ticket) => void;
   onSubmit: (order: Exclude<ReturnType<typeof ticketOrder>, string>) => Promise<string | null>;
 }
@@ -20,17 +22,22 @@ const TYPES: { value: TicketType; label: string }[] = [
   { value: "limit", label: "Limit" },
   { value: "market", label: "Market" },
   { value: "stop", label: "Stop" },
+  { value: "stop_limit", label: "Stop limit" },
   { value: "bracket", label: "Bracket" },
 ];
 
 // The order ticket. The qty input is the ref, so the B and S shortcuts can jump to it.
 export const OrderTicket = forwardRef<HTMLInputElement, Props>(function OrderTicket(
-  { symbol, last, cash, ticket, onChange, onSubmit },
+  { symbol, last, cash, ticket, allowed, onChange, onSubmit },
   qtyRef,
 ) {
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const set = (patch: Partial<Ticket>) => onChange({ ...ticket, ...patch });
+  // A bracket's exits are a limit and a stop, so it needs both.
+  const permitted = (t: TicketType) =>
+    !allowed ||
+    (t === "bracket" ? allowed.includes("limit") && allowed.includes("stop") : allowed.includes(t));
 
   const order = ticketOrder(ticket, symbol);
   const qty = Number(ticket.qty) || 0;
@@ -62,7 +69,9 @@ export const OrderTicket = forwardRef<HTMLInputElement, Props>(function OrderTic
       ? "at market"
       : ticket.type === "stop"
         ? `stop ${ticket.stop || "—"}`
-        : `@ ${ticket.price || "—"}`;
+        : ticket.type === "stop_limit"
+          ? `stop ${ticket.stop || "—"} @ ${ticket.price || "—"}`
+          : `@ ${ticket.price || "—"}`;
 
   return (
     <form className={styles.ticket} onSubmit={submit} data-side={ticket.side} noValidate>
@@ -90,6 +99,8 @@ export const OrderTicket = forwardRef<HTMLInputElement, Props>(function OrderTic
             role="radio"
             aria-checked={ticket.type === t.value}
             className={styles.type}
+            disabled={!permitted(t.value)}
+            title={permitted(t.value) ? undefined : "Not allowed in this league"}
             onClick={() => set({ type: t.value })}
           >
             {t.label}
@@ -98,23 +109,23 @@ export const OrderTicket = forwardRef<HTMLInputElement, Props>(function OrderTic
       </div>
 
       <div className={styles.fields}>
-        {(ticket.type === "limit" || ticket.type === "bracket") && (
-          <Field label={ticket.type === "bracket" ? "Entry price" : "Limit price"}>
-            <input
-              inputMode="decimal"
-              value={ticket.price}
-              placeholder={formatPrice(last)}
-              onChange={(e) => set({ price: e.target.value })}
-            />
-          </Field>
-        )}
-        {ticket.type === "stop" && (
+        {(ticket.type === "stop" || ticket.type === "stop_limit") && (
           <Field label="Stop price">
             <input
               inputMode="decimal"
               value={ticket.stop}
               placeholder={formatPrice(last)}
               onChange={(e) => set({ stop: e.target.value })}
+            />
+          </Field>
+        )}
+        {(ticket.type === "limit" || ticket.type === "bracket" || ticket.type === "stop_limit") && (
+          <Field label={ticket.type === "bracket" ? "Entry price" : "Limit price"}>
+            <input
+              inputMode="decimal"
+              value={ticket.price}
+              placeholder={formatPrice(last)}
+              onChange={(e) => set({ price: e.target.value })}
             />
           </Field>
         )}
@@ -165,6 +176,12 @@ export const OrderTicket = forwardRef<HTMLInputElement, Props>(function OrderTic
         <div className={styles.meter} aria-hidden="true">
           <span style={{ width: `${share * 100}%` }} />
         </div>
+      )}
+      {ticket.type === "stop_limit" && (
+        <p className={`mono ${styles.note}`}>
+          Waits until a trade reaches the stop price, then works as a limit order at your limit
+          price.
+        </p>
       )}
       {ticket.type === "bracket" && (
         <p className={`mono ${styles.note}`}>
