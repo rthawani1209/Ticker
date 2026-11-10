@@ -16,13 +16,16 @@ const Register = z.object({
 const Login = z.object({ email: z.email(), password: z.string().min(1).max(200) });
 
 const COOKIE = "ticker_rt";
+const ACCOUNT_GUESSES = 30;
 
 export default async function authRoutes(app: FastifyInstance) {
   const { db, tokens, config } = app.deps;
   // Limits are sized for a classroom on one shared IP: 30 sign-ups or 60 logins a
   // minute per IP, 10 password guesses a minute per account from any one IP (so a
   // stranger can't lock someone out of their own account), and refreshes are counted
-  // per session rather than per IP.
+  // per session rather than per IP. On top of that, an account that has had
+  // ACCOUNT_GUESSES wrong passwords in 15 minutes, from any number of IPs, only takes
+  // logins from IPs it has signed in from before, until the guessing slows down.
   const perIp = (max: number) => ({
     rateLimit: { max, timeWindow: 60_000, keyGenerator: (req: FastifyRequest) => req.ip },
   });
@@ -66,6 +69,19 @@ export default async function authRoutes(app: FastifyInstance) {
     };
   }
 
+  // Lots of recent wrong passwords for this account, and this IP has never got in.
+  async function underAttack(userId: number, ip: string): Promise<boolean> {
+    const { rows } = await db.query(
+      `SELECT
+         (SELECT count(*)::int FROM audit_log WHERE user_id = $1 AND action = 'login_failed'
+            AND created_at > now() - interval '15 minutes') AS failed,
+         EXISTS (SELECT 1 FROM audit_log WHERE user_id = $1 AND ip = $2
+            AND action IN ('login', 'register', 'guest') AND created_at > now() - interval '90 days') AS known`,
+      [userId, ip],
+    );
+    return rows[0].failed >= ACCOUNT_GUESSES && !rows[0].known;
+  }
+
   app.post("/register", { config: perIp(30) }, async (req, reply) => {
     const body = Register.parse(req.body);
     const hash = await hashPassword(body.password);
@@ -73,6 +89,12 @@ export default async function authRoutes(app: FastifyInstance) {
     // A guest saving their account keeps their portfolio: the guest row becomes the
     // new account instead of a fresh user being made.
     const caller = await app.identify(req);
+    // A guest whose token ran out would otherwise get a brand new account and lose
+    // their portfolio. Say so, and the app refreshes the token and tries again.
+    if (!caller && req.headers.authorization)
+      return reply
+        .code(401)
+        .send({ error: "unauthorized", message: "session expired, refresh and try again" });
     if (caller?.kind === "user" && caller.claims.role === "guest") {
       const { rows } = await db.query(
         `UPDATE users SET email = $2, username = $3, password_hash = $4, role = 'student'
@@ -156,6 +178,11 @@ export default async function authRoutes(app: FastifyInstance) {
       [body.email],
     );
     const user = rows[0];
+    if (user && (await underAttack(user.id, req.ip)))
+      return reply.code(429).send({
+        error: "rate_limited",
+        message: "too many wrong passwords for this account, try again in a few minutes",
+      });
     const ok = await verifyPassword(user?.password_hash ?? (await dummyHash()), body.password);
     if (!user || !ok) {
       await audit(db, user?.id ?? null, "login_failed", { email: body.email }, req.ip);

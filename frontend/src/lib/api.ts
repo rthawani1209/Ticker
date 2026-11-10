@@ -243,13 +243,22 @@ export const auth = {
   guest: () => call<Session>("/v1/auth/guest", { method: "POST" }),
   login: (email: string, password: string) =>
     call<Session>("/v1/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }),
-  // A guest's token turns the guest into this account, portfolio and all.
-  register: (email: string, username: string, password: string, guestToken?: string) =>
-    call<Session>("/v1/auth/register", {
-      method: "POST",
-      token: guestToken,
-      body: JSON.stringify({ email, username, password }),
-    }),
+  // A guest's token turns the guest into this account, portfolio and all. If that
+  // token has run out, refresh it and try again rather than lose the portfolio.
+  register: async (email: string, username: string, password: string, guestToken?: string) => {
+    const send = (token?: string) =>
+      call<Session>("/v1/auth/register", {
+        method: "POST",
+        token,
+        body: JSON.stringify({ email, username, password }),
+      });
+    try {
+      return await send(guestToken);
+    } catch (err) {
+      if (!guestToken || !(err instanceof ApiError) || err.status !== 401) throw err;
+      return send((await auth.refresh()).accessToken);
+    }
+  },
   logout: () => call<void>("/v1/auth/logout", { method: "POST" }),
 };
 

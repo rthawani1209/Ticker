@@ -66,7 +66,7 @@ def main() -> int:
                         break
                     except (OSError, EngineError) as err:
                         logging.warning("engine not back yet: %s", err)
-                        delay = min(delay * 2, 15.0)
+                        delay = min(delay * 2, 4.0)
         finally:
             logging.info("final: %s", sim.report())
             await sim.client.close()

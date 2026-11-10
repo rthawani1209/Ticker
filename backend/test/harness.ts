@@ -23,7 +23,7 @@ import { LocalFanout, RedisFanout } from "../src/ws/fanout.js";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 export const ENGINE_BIN =
   process.env.TICKER_ENGINE ?? path.join(root, "engine/build/ticker-engine");
-const TOKEN = 5150n;
+export const TOKEN = 5150n;
 
 export function startEngine(): Promise<{ proc: ChildProcess; port: number }> {
   if (!existsSync(ENGINE_BIN)) throw new Error(`build the engine first: ${ENGINE_BIN} not found`);

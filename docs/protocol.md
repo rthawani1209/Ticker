@@ -33,6 +33,7 @@ Logon must come first. Flags:
 - `1` market data: receive every public trade, book update and status change, plus `Stats`.
 - `2` proxy: the `account` field on orders is used as-is. The web backend and the bot simulator log on this way and trade on behalf of many users. A normal session always trades as the account it logged on with.
 - `4` admin: may halt and resume symbols.
+- `8` replay (with proxy): marks the session as a gateway. Right after the `LogonAck` it gets the events held while no gateway was connected (see below), then a `Lost` event for each order whose events didn't fit.
 
 If the server was started with a token, proxy and admin logons must send it.
 
@@ -47,7 +48,7 @@ If the server was started with a token, proxy and admin logons must send it.
 | 66   | Stats    | 48   | shard u32, commands u64, p50 u64, p99 u64, p99.9 u64, max u64 (ns) |
 | 67   | Error    | 8    | code u32: 1 bad message, 2 not logged in, 3 already logged in, 4 bad token, 5 not allowed, 6 slow consumer |
 
-Events with `session` 0 are public (trades, book deltas, trading status) and go to every market-data session. Everything else (acks, rejects, fills, cancels) goes only to the session that sent the order, or the session that owns the resting order. If that session has disconnected the message is dropped, but the order stays on the book.
+Events with `session` 0 are public (trades, book deltas, trading status) and go to every market-data session. Everything else (acks, rejects, fills, cancels) goes only to the session that sent the order, or the session that owns the resting order. If that session has disconnected, the order stays on the book and its events go to every proxy session instead. If none of those is a replay session (the only gateway is restarting), the events are also held, up to 65,536 (`held_events`), and sent to the next replay session that logs on. When the hold is full the oldest event is dropped and its order remembered; the gateway then gets an event of type 11 `Lost` for that order (order id 0 if even that list, of up to about a million orders, overflowed).
 
 A client that stops reading is disconnected once 64 MB of output is waiting for it.
 

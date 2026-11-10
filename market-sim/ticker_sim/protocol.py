@@ -67,6 +67,7 @@ class EventType(IntEnum):
     SNAPSHOT_END = 8
     TRIGGERED = 9
     TRADING_STATUS = 10
+    LOST = 11  # only sent to gateways that log on with replay
 
 
 class RejectReason(IntEnum):

@@ -185,6 +185,29 @@ describe("auth", () => {
     expect(owner.statusCode).toBe(401);
   });
 
+  it("caps guesses at one account across many IPs, but lets the owner in from home", async () => {
+    await signUp(b, "target");
+    const { rows } = await b.db.query(
+      "SELECT host(ip) AS ip FROM audit_log a JOIN users u ON u.id = a.user_id WHERE u.username = 'target' AND action = 'register'",
+    );
+    const guess = (ip: string, password = "guessing guess") =>
+      b.app.inject({
+        method: "POST",
+        url: "/v1/auth/login",
+        remoteAddress: ip,
+        payload: { email: "target@example.com", password },
+      });
+    // 40 IPs, a few guesses each: well under the per-IP limit.
+    const codes: number[] = [];
+    for (let i = 0; i < 40; i++) codes.push((await guess(`10.44.${i}.1`)).statusCode);
+    expect(codes.filter((c) => c === 401)).toHaveLength(30);
+    expect(codes.slice(30).every((c) => c === 429)).toBe(true);
+    // The right password from a new IP still waits, so the guesser can't confirm a hit...
+    expect((await guess("10.44.99.1", "correct horse battery")).statusCode).toBe(429);
+    // ...but the owner from where they signed up gets in.
+    expect((await guess(rows[0].ip, "correct horse battery")).statusCode).toBe(200);
+  });
+
   it("does not give a made-up API key its own rate limit bucket", async () => {
     // Before, any "Bearer tk_..." header got a fresh bucket, so rotating fake keys dodged the IP limit.
     const remaining: number[] = [];
@@ -244,6 +267,23 @@ describe("auth", () => {
       }
     }
     expect([...codes]).toEqual([200]); // 400 calls from one IP, but 200 per user
+  });
+
+  it("won't make a fresh account when a guest's token has run out", async () => {
+    const res = await b.app.inject({
+      method: "POST",
+      url: "/v1/auth/register",
+      remoteAddress: "10.6.6.7",
+      headers: { authorization: "Bearer not.a.valid-token" },
+      payload: {
+        email: "late@example.com",
+        username: "late_guest",
+        password: "correct horse battery",
+      },
+    });
+    expect(res.statusCode).toBe(401);
+    const { rows } = await b.db.query("SELECT 1 FROM users WHERE email = 'late@example.com'");
+    expect(rows).toHaveLength(0);
   });
 
   it("turns a guest into the new account, portfolio and all", async () => {

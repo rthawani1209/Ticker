@@ -88,6 +88,7 @@ enum class EventType : std::uint8_t {
     SnapshotEnd,
     Triggered,      // a stop order reached its stop price and is now live
     TradingStatus,  // public: reason 1 = halted, 0 = open; level_qty = resume time (ns) if known
+    Lost,           // replay only: an event about this order never reached a gateway (order_id 0 = unknown orders)
 };
 
 struct Event {

@@ -9,6 +9,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <deque>
 #include <memory>
 #include <string>
 #include <thread>
@@ -31,6 +32,7 @@ struct ServerConfig {
     std::string journal_dir;  // empty = no journal, nothing survives a restart
     bool fsync = false;       // fsync the journal after every batch, not just write()
     std::uint64_t token = 0;  // when non-zero, every logon must carry it
+    std::size_t held_events = 1 << 16;  // undelivered gateway events held for its return
     std::vector<SymbolConfig> symbols = default_symbols();
 };
 
@@ -113,6 +115,13 @@ private:
     std::unordered_map<SessionId, Connection*> by_session_;
     std::vector<Connection*> dirty_;
     std::vector<std::unique_ptr<Connection>> graveyard_;  // freed after the current loop pass
+
+    // Private events of gone sessions that no kReplay session was there to receive,
+    // held for the next one. Orders whose events were pushed out of the buffer are
+    // remembered in lost_, so the gateway hears that it missed something.
+    std::deque<Event> orphans_;
+    std::unordered_map<OrderId, Event> lost_;
+    bool lost_overflow_ = false;
 };
 
 }  // namespace ticker

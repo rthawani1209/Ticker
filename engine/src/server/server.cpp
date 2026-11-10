@@ -20,6 +20,8 @@ namespace {
 
 constexpr std::size_t kMaxPendingWrite = 64 << 20;  // drop clients that fall this far behind
 constexpr std::size_t kBatch = 256;
+// Orders remembered as lost once their held events overflow cfg_.held_events.
+constexpr std::size_t kMaxLost = 1 << 20;
 
 std::uint64_t wall_ns() {
     using namespace std::chrono;
@@ -283,13 +285,33 @@ void Server::on_message(Connection& c, const wire::Header& h, const std::uint8_t
         // account session could otherwise cancel or trade for any portfolio.
         if (cfg_.token != 0 && m.token != cfg_.token) return fail(c, ErrorCode::BadToken);
         c.account = m.account;
-        c.flags = m.flags & (kMarketData | kProxy | kAdmin);
+        c.flags = m.flags & (kMarketData | kProxy | kAdmin | kReplay);
         c.logged_in = true;
         auto ack = make<LogonAck>(MsgType::LogonAck);
         ack.session = c.session;
         ack.flags = c.flags;
         ack.symbols = std::uint32_t(cfg_.symbols.size());
         queue(c, &ack, sizeof ack);
+        if ((c.flags & kProxy) && (c.flags & kReplay)) {
+            auto ev = make<EventMsg>(MsgType::EventMsg);
+            for (const auto& e : orphans_) {
+                ev.event = e;
+                queue(c, &ev, sizeof ev);
+            }
+            for (const auto& [id, e] : lost_) {
+                ev.event = e;
+                queue(c, &ev, sizeof ev);
+            }
+            if (lost_overflow_) {
+                ev.event = Event{};
+                ev.event.type = EventType::Lost;
+                ev.event.session = c.session;
+                queue(c, &ev, sizeof ev);
+            }
+            orphans_.clear();  // delivered now
+            lost_.clear();
+            lost_overflow_ = false;
+        }
         return;
     }
     if (!c.logged_in) return fail(c, ErrorCode::NotLoggedIn);
@@ -404,9 +426,32 @@ void Server::deliver(const Event& e) {
     // engine restarting and recovering the book from its journal. Its orders stay on
     // the book, so later fills and cancels go to every proxy session (the gateways and
     // the simulator), which each pick out the accounts they own. Dropping them would
-    // leave a gateway's ledger out of step with the book.
-    for (auto& [id, c] : by_session_)
-        if (c->flags & wire::kProxy) queue(*c, &msg, sizeof msg);
+    // leave a gateway's ledger out of step with the book. If no gateway (a kReplay
+    // proxy) is connected right now, say the only one is restarting, the event is held
+    // and sent to the next one that logs on.
+    bool gateway = false;
+    for (auto& [id, c] : by_session_) {
+        if (!(c->flags & wire::kProxy)) continue;
+        queue(*c, &msg, sizeof msg);
+        gateway |= (c->flags & wire::kReplay) != 0;
+    }
+    if (gateway) return;
+    orphans_.push_back(e);
+    if (orphans_.size() <= cfg_.held_events) return;
+    const Event& dropped = orphans_.front();
+    if (lost_.size() < kMaxLost) {
+        Event mark{};
+        mark.type = EventType::Lost;
+        mark.symbol = dropped.symbol;
+        mark.session = dropped.session;
+        mark.account = dropped.account;
+        mark.order_id = dropped.order_id;
+        mark.cl_ord_id = dropped.cl_ord_id;
+        lost_.try_emplace(dropped.order_id, mark);
+    } else {
+        lost_overflow_ = true;
+    }
+    orphans_.pop_front();
 }
 
 void Server::queue(Connection& c, const void* data, std::size_t n) {

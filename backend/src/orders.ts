@@ -10,6 +10,7 @@ import type { PoolClient } from "pg";
 import type { Db } from "./db/pool.js";
 import { EngineDown, type EngineBridge } from "./engine/bridge.js";
 import * as p from "./engine/protocol.js";
+import { audit } from "./audit.js";
 import { ApiError } from "./errors.js";
 import {
   applyFill,
@@ -70,6 +71,13 @@ export interface Fill {
   commission: number;
   createdAt: string;
 }
+
+// With no league asked for, lists show the practice league, the same as positions do.
+// Showing every league mixed together let Esc on the practice screen cancel a league order.
+const PRACTICE = "(SELECT id FROM leagues WHERE is_practice)";
+
+// First key of the advisory lock held while a bracket's exits are worked out.
+const EXIT_LOCK = 0x7e17;
 
 const SIDES: Record<SideName, p.Side> = { buy: p.Side.Buy, sell: p.Side.Sell };
 const TYPES: Record<TypeName, p.OrdType> = {
@@ -260,17 +268,48 @@ export class OrderService extends EventEmitter {
   // and the stop-loss should each be working for exactly that much. So a partial fill of
   // one shrinks the other, a full fill cancels it, and the first sync after the entry is
   // done sends both. Exits skip the buying-power check, which this keeps safe.
+  //
+  // Every gateway hears about fills and cancels of orders whose session has gone, so two
+  // of them can sync the same bracket at once. A Postgres advisory lock per entry makes
+  // the second one wait and then see the exits the first one made.
   private async syncExits(entryId: number): Promise<void> {
     // Nothing can be sent or cancelled now; reconcile() runs this again on reconnect.
     if (!this.bridge.connected) return;
+    const lock = await this.db.connect();
+    let plan: { toSend: OrderInput[]; ids: number[]; userId: number; portfolioId: number } | null;
+    try {
+      await lock.query("SELECT pg_advisory_lock($1, $2)", [EXIT_LOCK, entryId]);
+      plan = await this.planExits(entryId);
+    } finally {
+      await lock.query("SELECT pg_advisory_unlock($1, $2)", [EXIT_LOCK, entryId]).catch(() => {});
+      lock.release();
+    }
+    if (!plan) return;
+    for (const [i, x] of plan.toSend.entries()) {
+      try {
+        await this.send(plan.userId, plan.ids[i]!, plan.portfolioId, x);
+      } catch (err) {
+        if (!(err instanceof EngineDown)) throw err;
+        // Lost the exchange mid-way: mark it so the reconnect sweep sends it again.
+        await this.db.query(
+          `UPDATE orders SET status = 'rejected', leaves = 0, reject_reason = 'exchange_unavailable'
+           WHERE id = $1 AND status = 'pending'`,
+          [plan.ids[i]],
+        );
+      }
+    }
+  }
+
+  // Works out a bracket's exits and writes the new ones as pending, under the lock.
+  private async planExits(entryId: number) {
     const { rows } = await this.db.query(
       `SELECT id, user_id, portfolio_id, symbol_id, side, status, filled_qty, take_profit, stop_loss
        FROM orders WHERE id = $1`,
       [entryId],
     );
     const e = rows[0];
-    if (!e || e.take_profit === null || e.filled_qty === 0) return;
-    if (!["filled", "cancelled"].includes(e.status)) return;
+    if (!e || e.take_profit === null || e.filled_qty === 0) return null;
+    if (!["filled", "cancelled"].includes(e.status)) return null;
 
     const [exitRows, pos, others] = await Promise.all([
       this.db.query(
@@ -283,11 +322,16 @@ export class OrderService extends EventEmitter {
         e.symbol_id,
       ]),
       // Other working orders on the exit's side, which would close the same shares.
+      // Another bracket's take-profit and stop-loss close the same shares (when one
+      // fills the other goes), so each other bracket counts once, at its bigger leg.
       this.db.query(
-        `SELECT coalesce(sum(leaves), 0)::int AS qty FROM orders
-         WHERE portfolio_id = $1 AND symbol_id = $2 AND side = $3
-           AND status IN ('pending', 'open', 'partially_filled')
-           AND parent_id IS DISTINCT FROM $4 AND reject_reason IS DISTINCT FROM 'resized'`,
+        `SELECT coalesce(sum(qty), 0)::int AS qty FROM (
+           SELECT CASE WHEN parent_id IS NULL THEN sum(leaves) ELSE max(leaves) END AS qty
+           FROM orders
+           WHERE portfolio_id = $1 AND symbol_id = $2 AND side = $3
+             AND status IN ('pending', 'open', 'partially_filled')
+             AND parent_id IS DISTINCT FROM $4 AND reject_reason IS DISTINCT FROM 'resized'
+           GROUP BY parent_id) AS closing`,
         [e.portfolio_id, e.symbol_id, e.side === "buy" ? "sell" : "buy", entryId],
       ),
     ]);
@@ -339,7 +383,7 @@ export class OrderService extends EventEmitter {
         }
       }
     }
-    if (toSend.length === 0) return;
+    if (toSend.length === 0) return null;
 
     const ids: number[] = [];
     await this.tx(async (client) => {
@@ -347,19 +391,7 @@ export class OrderService extends EventEmitter {
         ids.push(await insertOrder(client, e.user_id, e.portfolio_id, x, e.id));
       await client.query("UPDATE orders SET exits_sent = true WHERE id = $1", [e.id]);
     });
-    for (const [i, x] of toSend.entries()) {
-      try {
-        await this.send(e.user_id, ids[i]!, e.portfolio_id, x);
-      } catch (err) {
-        if (!(err instanceof EngineDown)) throw err;
-        // Lost the exchange mid-way: mark it so the reconnect sweep sends it again.
-        await this.db.query(
-          `UPDATE orders SET status = 'rejected', leaves = 0, reject_reason = 'exchange_unavailable'
-           WHERE id = $1 AND status = 'pending'`,
-          [ids[i]],
-        );
-      }
-    }
+    return { toSend, ids, userId: e.user_id as number, portfolioId: e.portfolio_id as number };
   }
 
   // Amends a resting limit order: a new price, a new open quantity, or both. Same
@@ -486,16 +518,16 @@ export class OrderService extends EventEmitter {
       const current = (await this.get(userId, orderId))!;
       if (current.status === "filled") throw new ApiError(409, "not_open", "order already filled");
       if (p.REJECT_REASONS[reject.reason] === "unknown_order") {
-        // The exchange no longer has it: it finished while this gateway was cut off
-        // and the news never arrived. Close it here too, so it stops holding cash.
-        await this.db.query(
-          `UPDATE orders SET status = 'cancelled', leaves = 0, reject_reason = 'lost_at_exchange', updated_at = now()
-           WHERE id = $1 AND status IN ('open', 'partially_filled')`,
-          [orderId],
+        // The exchange no longer has it, yet nothing told us how it ended. A gateway
+        // that comes back gets the events it missed (kReplay), so this means more than
+        // 15 minutes of events were lost. Filled or cancelled is unknown, so the order
+        // is left as it is for someone to look at rather than called cancelled.
+        this.emit("error", new Error(`order ${orderId} is open here but unknown to the exchange`));
+        throw new ApiError(
+          409,
+          "out_of_sync",
+          "the exchange no longer has this order and how it ended is being checked",
         );
-        const closed = (await this.get(userId, orderId))!;
-        this.emit(`user:${userId}`, closed);
-        return closed;
       }
       throw new ApiError(409, "cancel_rejected", p.REJECT_REASONS[reject.reason] ?? "rejected");
     }
@@ -522,7 +554,7 @@ export class OrderService extends EventEmitter {
     const { rows } = await this.db.query(
       `SELECT ${ORDER_COLUMNS} FROM ${ORDER_FROM}
        WHERE o.user_id = $1 AND ($2::boolean IS NOT TRUE OR o.status IN ('pending', 'open', 'partially_filled'))
-         AND ($3::bigint IS NULL OR o.id < $3) AND ($5::bigint IS NULL OR pf.league_id = $5)
+         AND ($3::bigint IS NULL OR o.id < $3) AND pf.league_id = coalesce($5, ${PRACTICE})
        ORDER BY o.id DESC LIMIT $4`,
       [userId, opts.open ?? null, opts.before ?? null, opts.limit, opts.league ?? null],
     );
@@ -533,7 +565,7 @@ export class OrderService extends EventEmitter {
     const { rows } = await this.db.query(
       `SELECT f.id, f.order_id, pf.league_id, s.ticker AS symbol, f.side, f.price, f.qty, f.commission, f.created_at
        FROM fills f JOIN symbols s ON s.id = f.symbol_id JOIN portfolios pf ON pf.id = f.portfolio_id
-       WHERE f.user_id = $1 AND ($3::bigint IS NULL OR pf.league_id = $3) ORDER BY f.id DESC LIMIT $2`,
+       WHERE f.user_id = $1 AND pf.league_id = coalesce($3, ${PRACTICE}) ORDER BY f.id DESC LIMIT $2`,
       [userId, opts.limit, opts.league ?? null],
     );
     return rows.map((r) => ({
@@ -661,7 +693,8 @@ export class OrderService extends EventEmitter {
           await client.query(
             `UPDATE orders SET leaves = $2, filled_qty = filled_qty + $3,
                status = CASE WHEN $2 = 0 THEN 'filled'::order_status ELSE 'partially_filled'::order_status END,
-               reject_reason = NULL, updated_at = now()
+               reject_reason = CASE WHEN reject_reason = 'out_of_sync' THEN reject_reason END,
+               updated_at = now()
              WHERE id = $1`,
             [o.id, e.leaves, e.qty],
           );
@@ -684,16 +717,42 @@ export class OrderService extends EventEmitter {
           const o = await this.orderForEvent(client, e);
           if (!o) return;
           const reason = p.CANCEL_REASONS[e.reason] ?? String(e.reason);
-          await client.query(
+          // Only once: every gateway can hear about the same cancel, and the exchange
+          // sends events again to a gateway that comes back (see the engine's kReplay).
+          const r = await client.query(
             `UPDATE orders SET status = 'cancelled', leaves = 0, updated_at = now(),
                reject_reason = CASE WHEN $2 = 'user' THEN NULL ELSE $2 END
-             WHERE id = $1`,
+             WHERE id = $1 AND status IN ('pending', 'open', 'partially_filled')`,
             [o.id, reason],
           );
+          if (!r.rowCount) return;
           id = o.id;
           userId = o.user_id;
         });
         if (id !== undefined) this.afterUpdate(id);
+        break;
+      }
+      case p.EventType.Lost: {
+        // The exchange held events for us while no gateway was up and ran out of room:
+        // this order's ledger entry may be missing a fill or a cancel. Flag it so a
+        // teacher can see it, rather than carry on as if nothing happened.
+        if (e.orderId === 0) {
+          this.emit("error", new Error("the exchange dropped events for orders it couldn't name"));
+          await audit(this.db, null, "exchange_events_lost", {});
+          break;
+        }
+        const r = await this.db.query(
+          `UPDATE orders SET reject_reason = 'out_of_sync', updated_at = now()
+           WHERE (engine_order_id = $1 OR (id = $2 AND portfolio_id = $3))
+             AND status IN ('pending', 'open', 'partially_filled')
+           RETURNING id, user_id`,
+          [e.orderId, e.clOrdId, e.account],
+        );
+        ({ id, user_id: userId } = r.rows[0] ?? {});
+        if (id !== undefined) {
+          this.emit("error", new Error(`order ${id} may be missing events from the exchange`));
+          await audit(this.db, userId!, "order_out_of_sync", { orderId: id });
+        }
         break;
       }
       case p.EventType.Replaced: {

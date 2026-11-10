@@ -17,7 +17,7 @@ export const MsgType = {
   Error: 67,
 } as const;
 
-export const Flags = { MarketData: 1, Proxy: 2, Admin: 4 } as const;
+export const Flags = { MarketData: 1, Proxy: 2, Admin: 4, Replay: 8 } as const;
 
 export const SIZES: Record<number, number> = {
   [MsgType.Logon]: 24,
@@ -61,6 +61,7 @@ export enum EventType {
   SnapshotEnd,
   Triggered,
   TradingStatus,
+  Lost, // replay only: an event about this order never reached a gateway
 }
 
 export const REJECT_REASONS = [

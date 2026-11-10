@@ -12,6 +12,7 @@ export interface BridgeOptions {
   port: number;
   token: bigint;
   refPrices: number[]; // starting price per symbol id
+  replay?: boolean; // ask for events held while no gateway was up (default true)
 }
 
 interface Waiter {
@@ -59,7 +60,10 @@ export class EngineBridge extends EventEmitter {
       let loggedOn = false;
 
       sock.on("connect", () => {
-        sock.write(p.logon(0, p.Flags.Proxy | p.Flags.MarketData, this.opts.token));
+        // Replay: fills and cancels that happened while no gateway was connected (this
+        // one restarting for a deploy) come first. apply() skips ones it already has.
+        const replay = this.opts.replay === false ? 0 : p.Flags.Replay;
+        sock.write(p.logon(0, p.Flags.Proxy | p.Flags.MarketData | replay, this.opts.token));
       });
       sock.on("data", (chunk) => {
         this.buf = this.buf.length ? Buffer.concat([this.buf, chunk]) : chunk;

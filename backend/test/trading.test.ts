@@ -2,6 +2,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import WebSocket from "ws";
 
+import { OrderService } from "../src/orders.js";
 import { auth, signUp, startBackend, type Backend } from "./harness.js";
 
 let b: Backend;
@@ -208,8 +209,9 @@ describe("bracket orders", () => {
     expect(extra.statusCode).toBe(201);
   });
 
-  async function exitsOf(token: string, entryId: number) {
-    const res = await b.app.inject({ url: "/v1/orders?limit=200", headers: auth(token) });
+  async function exitsOf(token: string, entryId: number, league?: number) {
+    const url = `/v1/orders?limit=200${league ? `&league=${league}` : ""}`;
+    const res = await b.app.inject({ url, headers: auth(token) });
     return (res.json() as any[]).filter((o) => o.parentId === entryId);
   }
   const working = (o: any) => ["pending", "open", "partially_filled"].includes(o.status);
@@ -249,6 +251,70 @@ describe("bracket orders", () => {
       return e.length === 2 ? e : null;
     });
     expect(exits?.map((o) => o.type).sort()).toEqual(["limit", "stop"]);
+  });
+
+  it("gives a second bracket on the same stock its own exits", async () => {
+    const [alice, seller] = [await signUp(b), await signUp(b)];
+    await place(seller.token, { symbol: "VYNE", side: "sell", price: 97_00, qty: 20 });
+    const bracket = { symbol: "VYNE", side: "buy", price: 97_00, qty: 10, takeProfit: 99_00 };
+    const first = (await place(alice.token, { ...bracket, stopLoss: 95_00 })).json();
+    await until(async () => (await exitsOf(alice.token, first.id)).filter(working).length === 2);
+    const second = (await place(alice.token, { ...bracket, stopLoss: 94_00 })).json();
+    expect(second.status).toBe("filled");
+
+    // 20 held, 10 already covered by the first bracket's exits (counted once): 10 left.
+    const exits = await until(async () => {
+      const live = (await exitsOf(alice.token, second.id)).filter(working);
+      return live.length === 2 ? live : null;
+    });
+    expect(exits?.map((o) => o.qty)).toEqual([10, 10]);
+  });
+
+  it("sends a bracket's exits once when two gateways sync it at the same time", async () => {
+    const [alice, seller] = [await signUp(b), await signUp(b)];
+    // Above the guest's 24.00 bid from earlier in this file, so only alice buys it.
+    await place(seller.token, { symbol: "KILN", side: "sell", price: 24_40, qty: 10 });
+    // The entry fills while this gateway thinks the exchange is away, so nothing is sent yet.
+    const bridge = b.bridge as any;
+    const submit = bridge.submit.bind(bridge);
+    bridge.submit = async (...args: unknown[]) => {
+      const reply = await submit(...args);
+      bridge.connected = false;
+      return reply;
+    };
+    const entry = (
+      await place(alice.token, {
+        symbol: "KILN",
+        side: "buy",
+        price: 24_40,
+        qty: 10,
+        takeProfit: 25_00,
+        stopLoss: 23_00,
+      })
+    ).json();
+    bridge.submit = submit;
+    await new Promise((r) => setTimeout(r, 200));
+    bridge.connected = true;
+
+    // A second gateway: its own OrderService, sharing only the database.
+    const other = new OrderService(b.db, b.bridge) as any;
+    other.on("error", (err: unknown) => console.error("second gateway", err));
+    await Promise.all([
+      (b.orders as any).syncExits(entry.id),
+      other.syncExits(entry.id),
+      (b.orders as any).syncExits(entry.id),
+      other.syncExits(entry.id),
+    ]);
+    const exits = await until(async () => {
+      const live = (await exitsOf(alice.token, entry.id)).filter(working);
+      return live.length >= 2 ? live : null;
+    });
+    await new Promise((r) => setTimeout(r, 200));
+    const all = await exitsOf(alice.token, entry.id);
+    expect(exits).not.toBeNull();
+    expect(all.map((o) => `${o.type}:${o.qty}`).sort()).toEqual(["limit:10", "stop:10"]);
+    other.apply = async () => {}; // retire it so it stops hearing events
+    other.reconcile = async () => 0;
   });
 
   it("shrinks the other exit when one fills partway", async () => {
@@ -315,7 +381,7 @@ describe("bracket orders", () => {
 
     // The entry filled 20 in total but alice only holds 10, so each exit is for 10.
     const exits = await until(async () => {
-      const live = (await exitsOf(alice.token, entry.id)).filter(working);
+      const live = (await exitsOf(alice.token, entry.id, league.id)).filter(working);
       return live.length === 2 ? live : null;
     });
     expect(exits?.map((o) => o.qty)).toEqual([10, 10]);
@@ -358,7 +424,7 @@ describe("bracket orders", () => {
 
     // 50 held, 30 already promised to the manual sell: the exits cover the other 20.
     const exits = await until(async () => {
-      const live = (await exitsOf(alice.token, entry.id)).filter(working);
+      const live = (await exitsOf(alice.token, entry.id, league.id)).filter(working);
       return live.length === 2 ? live : null;
     });
     expect(exits?.map((o) => o.qty)).toEqual([20, 20]);

@@ -37,6 +37,11 @@ enum class MsgType : std::uint8_t {
 constexpr std::uint32_t kMarketData = 1;  // receive public trades and book updates
 constexpr std::uint32_t kProxy = 2;       // may send orders for any account (the web gateway, the bot simulator)
 constexpr std::uint32_t kAdmin = 4;       // may halt and resume symbols
+// With kProxy: right after the logon, also send the private events of gone sessions
+// that no kReplay session was connected to receive, then a Lost event for each order
+// whose events didn't fit in the buffer. A gateway restarting for a deploy sets this,
+// so fills that happened while it was down still reach its ledger.
+constexpr std::uint32_t kReplay = 8;
 
 enum class ErrorCode : std::uint32_t {
     BadMessage = 1,

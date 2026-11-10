@@ -6,6 +6,7 @@ import { useState, useSyncExternalStore, type FormEvent } from "react";
 
 import { Logo } from "@/components/ui/Logo";
 import { auth } from "@/lib/api";
+import { safeNext } from "@/lib/redirect";
 
 import styles from "./LoginForm.module.css";
 import { useSession } from "./SessionProvider";
@@ -19,7 +20,7 @@ const modeFromUrl = (): Mode =>
 // trade screen. Only paths on this site, so the link can't send people elsewhere.
 function nextPath(): string {
   const next = new URLSearchParams(window.location.search).get("next");
-  return next && next.startsWith("/") && !next.startsWith("//") ? next : "/trade";
+  return safeNext(next, window.location.origin);
 }
 
 export function LoginForm() {

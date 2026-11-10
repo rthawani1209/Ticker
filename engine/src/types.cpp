@@ -16,6 +16,7 @@ std::string_view to_string(EventType t) {
         case EventType::SnapshotEnd: return "SnapshotEnd";
         case EventType::Triggered: return "Triggered";
         case EventType::TradingStatus: return "TradingStatus";
+        case EventType::Lost: return "Lost";
     }
     return "?";
 }

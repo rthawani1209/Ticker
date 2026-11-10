@@ -1,7 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { EngineBridge } from "../src/engine/bridge.js";
 import * as p from "../src/engine/protocol.js";
-import { auth, signUp, startBackend, type Backend } from "./harness.js";
+import { auth, signUp, startBackend, TOKEN, type Backend } from "./harness.js";
 
 let b: Backend;
 let alice: Awaited<ReturnType<typeof signUp>>;
@@ -297,6 +298,37 @@ describe("engine events", () => {
     levelQty: 0,
   });
 
+  it("flags an order the exchange says it lost events for, and keeps the flag", async () => {
+    const engineOrderId = 7 * 2 ** 40 + 888_888;
+    const { rows } = await b.db.query(
+      `INSERT INTO orders (user_id, portfolio_id, symbol_id, side, type, tif, price, qty, leaves, status, engine_order_id)
+       VALUES ($1, $2, 7, 'buy', 'limit', 'gtc', 18000, 5, 5, 'open', $3) RETURNING id`,
+      [alice.id, alice.portfolio, engineOrderId],
+    );
+    const id = rows[0].id;
+    const o = { engineOrderId, id, account: alice.portfolio };
+    b.bridge.emit("private", { ...fillEvent(o, 0, 0, 0), type: p.EventType.Lost, symbol: 7 });
+    await b.orders.settled();
+    const get = async () =>
+      (await b.app.inject({ url: `/v1/orders/${id}`, headers: auth(alice.token) })).json();
+    expect(await get()).toMatchObject({ status: "open", rejectReason: "out_of_sync" });
+
+    // A later fill still books, and the order stays flagged for a person to check.
+    b.bridge.emit("private", { ...fillEvent(o, 990_777, 2, 3), symbol: 7, price: 18_000 });
+    await b.orders.settled();
+    expect(await get()).toMatchObject({
+      status: "partially_filled",
+      filledQty: 2,
+      rejectReason: "out_of_sync",
+    });
+    const audit = await b.db.query(
+      "SELECT 1 FROM audit_log WHERE action = 'order_out_of_sync' AND detail->>'orderId' = $1",
+      [String(id)],
+    );
+    expect(audit.rows).toHaveLength(1);
+    await b.db.query("UPDATE orders SET status = 'cancelled', leaves = 0 WHERE id = $1", [id]);
+  });
+
   it("records a repeated fill only once", async () => {
     const order = (
       await place(alice.token, { symbol: "VYNE", side: "sell", price: 9_750, qty: 10 })
@@ -390,7 +422,102 @@ describe("engine events", () => {
     expect(JSON.stringify(positions)).toContain("MESA");
   });
 
-  it("closes an order the exchange no longer has when it is cancelled", async () => {
+  it("lists only practice orders and fills unless a league is asked for", async () => {
+    const league = (
+      await b.app.inject({
+        method: "POST",
+        url: "/v1/leagues",
+        headers: auth(bob.token),
+        payload: { name: "Lists" },
+      })
+    ).json();
+    const inLeague = (
+      await place(bob.token, {
+        symbol: "QSTR",
+        side: "buy",
+        price: 11_00,
+        qty: 3,
+        league: league.id,
+      })
+    ).json();
+    const inPractice = (
+      await place(bob.token, { symbol: "QSTR", side: "buy", price: 11_00, qty: 2 })
+    ).json();
+    const ids = async (url: string) =>
+      ((await b.app.inject({ url, headers: auth(bob.token) })).json() as any[]).map((o) => o.id);
+    expect(await ids("/v1/orders?open=true")).toContain(inPractice.id);
+    expect(await ids("/v1/orders?open=true")).not.toContain(inLeague.id);
+    expect(await ids(`/v1/orders?open=true&league=${league.id}`)).toEqual([inLeague.id]);
+    expect(await ids(`/v1/fills?league=${league.id}`)).toEqual([]);
+    for (const id of [inLeague.id, inPractice.id])
+      await b.app.inject({ method: "DELETE", url: `/v1/orders/${id}`, headers: auth(bob.token) });
+  });
+
+  it("books a fill that happened while the only gateway was down", async () => {
+    const bid = (
+      await place(alice.token, { symbol: "MESA", side: "buy", price: 18_650, qty: 7 })
+    ).json();
+    expect(bid.status).toBe("open");
+    const { rows } = await b.db.query("SELECT symbol_id FROM orders WHERE id = $1", [bid.id]);
+    const cashBefore = (
+      await b.db.query("SELECT cash FROM portfolios WHERE id = $1", [alice.portfolio])
+    ).rows[0].cash;
+
+    // The gateway goes away for a deploy. The simulator is still connected and sells.
+    const down = new Promise((resolve) => b.bridge.once("down", resolve));
+    b.bridge.stop();
+    await down;
+    await new Promise((r) => setTimeout(r, 50));
+    const sim = new EngineBridge({
+      host: "127.0.0.1",
+      port: b.engine.port,
+      token: TOKEN,
+      refPrices: b.bridge.books.map(() => 100),
+      replay: false, // like the Python simulator
+    });
+    await sim.start();
+    const sold = await sim.submit({
+      account: 899_001,
+      clOrdId: 1,
+      symbol: rows[0].symbol_id,
+      side: p.Side.Sell,
+      ordType: p.OrdType.Limit,
+      tif: p.TIF.IOC,
+      price: 18_650,
+      stopPrice: 0,
+      qty: 7,
+    });
+    expect(sold?.type).toBe(p.EventType.Ack);
+    await new Promise((r) => setTimeout(r, 50));
+    sim.stop();
+
+    // Back up: the exchange sends the fill it couldn't deliver.
+    const up = new Promise((resolve) => b.bridge.once("up", resolve));
+    await b.bridge.start();
+    await up;
+    for (let i = 0; i < 20; i++) {
+      await b.orders.settled();
+      const o = (
+        await b.app.inject({ url: `/v1/orders/${bid.id}`, headers: auth(alice.token) })
+      ).json();
+      if (o.status === "filled") break;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    const after = (
+      await b.app.inject({ url: `/v1/orders/${bid.id}`, headers: auth(alice.token) })
+    ).json();
+    expect(after).toMatchObject({ status: "filled", filledQty: 7, leaves: 0 });
+    const cashAfter = (
+      await b.db.query("SELECT cash FROM portfolios WHERE id = $1", [alice.portfolio])
+    ).rows[0].cash;
+    expect(Number(cashBefore) - Number(cashAfter)).toBeGreaterThanOrEqual(7 * 18_650);
+    const fills = await b.db.query("SELECT count(*)::int AS n FROM fills WHERE order_id = $1", [
+      bid.id,
+    ]);
+    expect(fills.rows[0].n).toBe(1);
+  });
+
+  it("won't call an order cancelled when the exchange doesn't know it", async () => {
     const { rows } = await b.db.query(
       `INSERT INTO orders (user_id, portfolio_id, symbol_id, side, type, tif, price, qty, leaves, status, engine_order_id)
        VALUES ($1, $2, 7, 'buy', 'limit', 'gtc', 18000, 5, 5, 'open', $3) RETURNING id`,
@@ -401,7 +528,12 @@ describe("engine events", () => {
       url: `/v1/orders/${rows[0].id}`,
       headers: auth(alice.token),
     });
-    expect(res.statusCode).toBe(200);
-    expect(res.json()).toMatchObject({ status: "cancelled", rejectReason: "lost_at_exchange" });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toBe("out_of_sync");
+    const still = await b.db.query("SELECT status FROM orders WHERE id = $1", [rows[0].id]);
+    expect(still.rows[0].status).toBe("open");
+    await b.db.query("UPDATE orders SET status = 'cancelled', leaves = 0 WHERE id = $1", [
+      rows[0].id,
+    ]);
   });
 });

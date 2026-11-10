@@ -163,6 +163,14 @@ export function Blotter({ portfolio, orders, fills, onCancel, onAmend, onPick }:
                     <span key="e" className={styles.editError} role="alert">
                       {editError}
                     </span>
+                  ) : o.rejectReason === "out_of_sync" ? (
+                    <span
+                      key="s"
+                      className={styles.editError}
+                      title="The exchange may have filled or cancelled this while the server restarted. Ask your teacher to check it."
+                    >
+                      {o.status.replace("_", " ")} · check
+                    </span>
                   ) : (
                     o.status.replace("_", " ")
                   ),

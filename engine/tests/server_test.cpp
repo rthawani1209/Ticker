@@ -2,7 +2,9 @@
 
 #include <gtest/gtest.h>
 
+#include <chrono>
 #include <filesystem>
+#include <thread>
 
 #include "test_client.hpp"
 
@@ -320,4 +322,79 @@ TEST(ServerTest, EventsForADisconnectedGatewayGoToTheProxyThatReplacedIt) {
     ASSERT_TRUE(fill);
     EXPECT_EQ(fill->qty, 7u);
     EXPECT_EQ(fill->cl_ord_id, 1u);
+}
+
+TEST(ServerTest, AGatewayThatWasDownForAFillGetsItWhenItComesBack) {
+    auto cfg = test_config();
+    cfg.token = 1234;
+    Server server(cfg);
+    server.start();
+
+    // The simulator is the only proxy up while the gateway restarts.
+    TestClient sim(server.port());
+    ASSERT_TRUE(sim.logon(0, wire::kProxy, 1234));
+    {
+        TestClient old_gateway(server.port());
+        ASSERT_TRUE(old_gateway.logon(0, wire::kProxy | wire::kReplay, 1234));
+        old_gateway.new_order(1, Side::Buy, 10000, 7, 8, OrdType::Limit, TIF::GTC, 555);
+        ASSERT_TRUE(old_gateway.wait_event(is(EventType::Ack)));
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));  // let the server see it close
+    sim.new_order(1, Side::Sell, 10000, 7, 9, OrdType::Limit, TIF::IOC, 899001);
+    auto missed = [](const Event& e) { return e.type == EventType::Fill && e.account == 555; };
+    ASSERT_TRUE(sim.wait_event(missed));  // the engine knew the gateway was gone
+
+    TestClient gateway(server.port());
+    ASSERT_TRUE(gateway.logon(0, wire::kProxy | wire::kMarketData | wire::kReplay, 1234));
+    auto fill = gateway.wait_event(missed);
+    ASSERT_TRUE(fill);
+    EXPECT_EQ(fill->qty, 7u);
+    EXPECT_EQ(fill->cl_ord_id, 8u);
+    EXPECT_EQ(fill->leaves, 0u);
+
+    // Without kReplay, a proxy only hears about what happens from now on.
+    // (And the held events went to the gateway, so they aren't sent twice.)
+    TestClient late_sim(server.port());
+    ASSERT_TRUE(late_sim.logon(0, wire::kProxy, 1234));
+    late_sim.new_order(2, Side::Sell, 10000, 1, 10, OrdType::Limit, TIF::GTC, 899002);
+    auto first = late_sim.wait_event([](const Event&) { return true; });
+    ASSERT_TRUE(first);
+    EXPECT_EQ(first->type, EventType::Ack);
+    EXPECT_EQ(first->cl_ord_id, 10u);
+}
+
+TEST(ServerTest, OrdersWhoseEventsDidNotFitAreReportedLost) {
+    auto cfg = test_config();
+    cfg.token = 1234;
+    cfg.held_events = 2;
+    Server server(cfg);
+    server.start();
+
+    TestClient sim(server.port());
+    ASSERT_TRUE(sim.logon(0, wire::kProxy, 1234));
+    {
+        TestClient old_gateway(server.port());
+        ASSERT_TRUE(old_gateway.logon(0, wire::kProxy | wire::kReplay, 1234));
+        for (std::uint64_t cl = 1; cl <= 3; ++cl) {
+            old_gateway.new_order(0, Side::Buy, 10000, 5, cl, OrdType::Limit, TIF::GTC, 555);
+            ASSERT_TRUE(old_gateway.wait_event(is(EventType::Ack)));
+        }
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    // Three fills while no gateway is up, but room to hold only two of them.
+    sim.new_order(0, Side::Sell, 10000, 15, 9, OrdType::Limit, TIF::IOC, 899001);
+    for (int i = 0; i < 3; ++i)
+        ASSERT_TRUE(sim.wait_event([](const Event& e) { return e.type == EventType::Fill && e.account == 555; }));
+
+    TestClient gateway(server.port());
+    ASSERT_TRUE(gateway.logon(0, wire::kProxy | wire::kReplay, 1234));
+    std::vector<Event> got;
+    for (int i = 0; i < 3; ++i) got.push_back(*gateway.wait_event([](const Event& e) { return e.account == 555; }));
+    EXPECT_EQ(got[0].type, EventType::Fill);
+    EXPECT_EQ(got[0].cl_ord_id, 2u);
+    EXPECT_EQ(got[1].type, EventType::Fill);
+    EXPECT_EQ(got[1].cl_ord_id, 3u);
+    EXPECT_EQ(got[2].type, EventType::Lost);
+    EXPECT_EQ(got[2].cl_ord_id, 1u);  // the first order's fill was pushed out
+    EXPECT_NE(got[2].order_id, 0u);
 }
