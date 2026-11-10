@@ -178,9 +178,9 @@ export function Blotter({ portfolio, orders, fills, onCancel, onAmend, onPick }:
                     <span
                       key="s"
                       className={styles.editError}
-                      title="The exchange may have filled or cancelled this while the server restarted. Ask your teacher to check it."
+                      title={`${o.status.replace("_", " ")}: the exchange may have filled or cancelled this while the server restarted. Ask your teacher to check it.`}
                     >
-                      {o.status.replace("_", " ")} · check
+                      check
                     </span>
                   ) : (
                     o.status.replace("_", " ")

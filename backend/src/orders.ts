@@ -466,7 +466,8 @@ export class OrderService extends EventEmitter {
       const reason = p.REJECT_REASONS[reply.reason] ?? "rejected";
       if (reason === "unknown_order") {
         // Open here but not on the exchange: see cancel().
-        await this.flagOutOfSync(orderId, "amend");
+        if (await this.finishedElseFlag(orderId, "amend"))
+          throw new ApiError(409, "not_open", "order already finished");
         throw new ApiError(
           409,
           "out_of_sync",
@@ -540,10 +541,13 @@ export class OrderService extends EventEmitter {
       const current = (await this.get(userId, orderId))!;
       if (current.status === "filled") throw new ApiError(409, "not_open", "order already filled");
       if (p.REJECT_REASONS[reject.reason] === "unknown_order") {
-        // The exchange no longer has it, yet nothing told us how it ended (say the
-        // engine restarted while no gateway was up). Filled or cancelled is unknown, so
-        // the order is flagged for someone to look at rather than called cancelled.
-        await this.flagOutOfSync(orderId, "cancel");
+        // Usually the order just finished on the way: a second cancel from another tab,
+        // or a fill, whose event this (or another) gateway is still writing. Otherwise
+        // the exchange lost track and nothing told us how it ended (say the engine
+        // restarted while no gateway was up), so it's flagged rather than called cancelled.
+        const status = await this.finishedElseFlag(orderId, "cancel");
+        if (status === "cancelled") return (await this.get(userId, orderId))!;
+        if (status) throw new ApiError(409, "not_open", `order is ${status}`);
         throw new ApiError(
           409,
           "out_of_sync",
@@ -796,6 +800,23 @@ export class OrderService extends EventEmitter {
       const order = await this.get(userId, id);
       if (order) this.emit(`user:${userId}`, order);
     }
+  }
+
+  // For an order the exchange says it doesn't have: waits up to `ms` for its final
+  // fill or cancel to be written, and returns that status. If it never comes, the
+  // order is flagged out_of_sync and this returns null.
+  private async finishedElseFlag(orderId: number, why: string, ms = 2000) {
+    const end = Date.now() + ms;
+    for (;;) {
+      await this.settled();
+      const { rows } = await this.db.query("SELECT status FROM orders WHERE id = $1", [orderId]);
+      const status: string | undefined = rows[0]?.status;
+      if (status && !["pending", "open", "partially_filled"].includes(status)) return status;
+      if (Date.now() >= end) break;
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    await this.flagOutOfSync(orderId, why);
+    return null;
   }
 
   // Marks an order whose ledger entry may not match the exchange. The flag stays for

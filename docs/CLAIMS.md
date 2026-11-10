@@ -56,7 +56,7 @@ Status: **done** = built and proven; **partial** = built, proof or number still 
 | Zod validation on every input, parameterized SQL only | done | `backend/src/routes/*.ts`; `validates input` tests | same | |
 | Sign-in links only go to pages on this site | done | `frontend/src/lib/redirect.ts`; `redirect.test.ts` (`refuses anything a browser would send to another host`) | `cd frontend && npx vitest run test/redirect.test.ts` | `/\evil`, `/%09/evil`, `//evil` all go to /trade |
 | Audit trail of logins, orders and cancels | done | `audit_log` table; `refresh_reuse` check in `auth.test.ts` | same | |
-| Integration tests against real Postgres and Redis | done | `backend/test/harness.ts`; `.github/workflows/backend.yml` | same | 125 tests |
+| Integration tests against real Postgres and Redis | done | `backend/test/harness.ts`; `.github/workflows/backend.yml` | same | 126 tests |
 | Redis pub/sub fan-out to WebSocket servers | done | `backend/src/ws/fanout.ts`; `backend/test/fanout.test.ts` (two gateways, a client on each gets every trade exactly once) | `cd backend && npx vitest run test/fanout.test.ts` | |
 | WebSocket delay with two gateways | done | [`docs/results/ws-delay-2026-11-06.json`](results/ws-delay-2026-11-06.json); `backend/scripts/ws-delay.ts` | `cd backend && npx tsx scripts/ws-delay.ts` | **p50 9 ms, p99 17 ms** (publishing gateway) and **p50 6 ms, p99 12 ms** (relay) to 500 clients, 250k messages each, no drops; one 4-vCPU VM with clients in the same process |
 | Order round trip under load (WebSockets, many users) | done | see the load test under Operations below | | **p50 9 ms, p99 48 ms** at 150 users and 150 orders/s, 0 errors |

@@ -282,6 +282,42 @@ describe("orders", () => {
     });
   });
 
+  it("doesn't flag an order that two cancels race on, or that fills while being amended", async () => {
+    const flag = async (id: number) =>
+      (await b.db.query("SELECT reject_reason FROM orders WHERE id = $1", [id])).rows[0]
+        .reject_reason;
+    const bid = (
+      await place(bob.token, { symbol: "KILN", side: "buy", price: 23_10, qty: 4 })
+    ).json();
+    const del = () =>
+      b.app.inject({ method: "DELETE", url: `/v1/orders/${bid.id}`, headers: auth(bob.token) });
+    const both = await Promise.all([del(), del()]);
+    for (const r of both) expect(r.json().status, r.body).toBe("cancelled");
+    expect(await flag(bid.id)).toBeNull();
+
+    // An amend whose order fills completely just before the engine sees it.
+    const bid2 = (
+      await place(bob.token, { symbol: "KILN", side: "buy", price: 25_90, qty: 4 })
+    ).json();
+    expect(bid2.status, JSON.stringify(bid2)).toBe("open");
+    const bridge = b.bridge as any;
+    const replace = bridge.replace.bind(bridge);
+    bridge.replace = async (...args: unknown[]) => {
+      await place(alice.token, { symbol: "KILN", side: "sell", price: 25_90, qty: 4, tif: "ioc" });
+      return replace(...args);
+    };
+    const res = await b.app.inject({
+      method: "PATCH",
+      url: `/v1/orders/${bid2.id}`,
+      headers: auth(bob.token),
+      payload: { qty: 2 },
+    });
+    bridge.replace = replace;
+    expect(res.json().error, res.body).toBe("not_open");
+    expect(await flag(bid2.id)).toBeNull();
+    await new Promise((r) => setTimeout(r, 1100)); // let the orders-per-second limits reset
+  });
+
   it("market orders default to IOC and cancel what doesn't fill", async () => {
     await place(bob.token, { symbol: "MESA", side: "sell", price: 18_810, qty: 4 });
     const res = await place(alice.token, { symbol: "MESA", side: "buy", type: "market", qty: 10 });
