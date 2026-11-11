@@ -139,6 +139,27 @@ describe("orders", () => {
     });
   });
 
+  it("refuses a stop-limit whose limit is on the wrong side of its stop", async () => {
+    const res = await place(alice.token, {
+      symbol: "VYNE",
+      side: "buy",
+      type: "stop_limit",
+      stopPrice: 98_00,
+      price: 97_50,
+      qty: 5,
+    });
+    expect(res.statusCode).toBe(400);
+    const sell = await place(alice.token, {
+      symbol: "VYNE",
+      side: "sell",
+      type: "stop_limit",
+      stopPrice: 96_00,
+      price: 96_50,
+      qty: 5,
+    });
+    expect(sell.statusCode).toBe(400);
+  });
+
   it("holds a stop-limit until the stop trades, then works it as a limit", async () => {
     const dave = await signUp(b, "dave");
     const sl = (

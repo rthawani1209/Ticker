@@ -20,8 +20,10 @@ export default async function orderRoutes(app: FastifyInstance) {
   app.addHook("preHandler", app.authenticate);
 
   // Per-user limit on order entry, keyed by the verified caller (see identify in app.ts).
+  // One budget shared by placing, amending and cancelling.
   const orderLimit = {
     rateLimit: {
+      groupId: "orders",
       max: 20,
       timeWindow: 1000,
       keyGenerator: async (req: FastifyRequest) => callerKey(req, await app.identify(req)),
@@ -111,6 +113,16 @@ export default async function orderRoutes(app: FastifyInstance) {
     const order = await ownOrder(req);
     if (!order) throw new ApiError(404, "not_found", "no such order");
     const key = req.user.apiKey;
+    // An amend is a new order on the exchange, so it counts against the key's limit.
+    if (key) {
+      const limit = await perKey(req);
+      if (!limit.isAllowed && limit.isExceeded)
+        throw new ApiError(
+          429,
+          "rate_limited",
+          `this key allows ${key.ordersPerSecond} orders a second`,
+        );
+    }
     if (key && body.qty !== undefined && body.qty > key.maxOrderQty)
       throw new ApiError(
         422,

@@ -99,27 +99,45 @@ export default async function authRoutes(app: FastifyInstance) {
       return reply
         .code(401)
         .send({ error: "unauthorized", message: "session expired, refresh and try again" });
+    const taken = () =>
+      reply.code(409).send({ error: "taken", message: "email or username already in use" });
+    // Two sign-ups racing for the same name both pass the NOT EXISTS check; the unique
+    // indexes stop the second, and that's a 409 too, not a 500.
+    const unlessTaken = async <T>(q: Promise<T>): Promise<T | null> => {
+      try {
+        return await q;
+      } catch (err) {
+        if ((err as { code?: string }).code === "23505") return null;
+        throw err;
+      }
+    };
     if (caller?.kind === "user" && caller.claims.role === "guest") {
-      const { rows } = await db.query(
-        `UPDATE users SET email = $2, username = $3, password_hash = $4, role = 'student'
+      const res = await unlessTaken(
+        db.query(
+          `UPDATE users SET email = $2, username = $3, password_hash = $4, role = 'student'
          WHERE id = $1 AND role = 'guest'
            AND NOT EXISTS (SELECT 1 FROM users WHERE id <> $1 AND (lower(email) = lower($2) OR lower(username) = lower($3)))
          RETURNING id, username, role`,
-        [caller.claims.userId, body.email, body.username, hash],
+          [caller.claims.userId, body.email, body.username, hash],
+        ),
       );
-      const user = rows[0];
-      if (!user)
-        return reply
-          .code(409)
-          .send({ error: "taken", message: "email or username already in use" });
+      const user = res?.rows[0];
+      if (!user) return taken();
+      // Sessions from the guest days end: a refresh cookie left on a shared computer
+      // would otherwise now open the full account.
+      await db.query(
+        "UPDATE refresh_tokens SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL",
+        [user.id],
+      );
       await audit(db, user.id, "register", { fromGuest: true }, req.ip);
       reply.code(201);
       return session(reply, user, await tokens.issueRefresh(user.id, meta(req)));
     }
 
     // New users start with a portfolio in the practice league.
-    const { rows } = await db.query(
-      `WITH u AS (
+    const res = await unlessTaken(
+      db.query(
+        `WITH u AS (
          INSERT INTO users (email, username, password_hash) VALUES ($1, $2, $3)
          ON CONFLICT DO NOTHING RETURNING id, username, role
        ), p AS (
@@ -127,11 +145,11 @@ export default async function authRoutes(app: FastifyInstance) {
          SELECT l.id, u.id, l.starting_cash FROM leagues l, u WHERE l.is_practice
        )
        SELECT * FROM u`,
-      [body.email, body.username, hash],
+        [body.email, body.username, hash],
+      ),
     );
-    const user = rows[0];
-    if (!user)
-      return reply.code(409).send({ error: "taken", message: "email or username already in use" });
+    const user = res?.rows[0];
+    if (!user) return taken();
     await audit(db, user.id, "register", {}, req.ip);
     reply.code(201);
     return session(reply, user, await tokens.issueRefresh(user.id, meta(req)));

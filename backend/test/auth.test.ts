@@ -304,6 +304,53 @@ describe("auth", () => {
     expect(rows).toHaveLength(0);
   });
 
+  it("treats usernames that differ only in case as the same", async () => {
+    await signUp(b, "casey");
+    const res = await b.app.inject({
+      method: "POST",
+      url: "/v1/auth/register",
+      remoteAddress: "10.6.7.1",
+      payload: {
+        email: "other_casey@example.com",
+        username: "CASEY",
+        password: "correct horse battery",
+      },
+    });
+    expect(res.statusCode).toBe(409);
+  });
+
+  it("gives 409, not 500, to sign-ups racing for one name, and ends the guest's old sessions", async () => {
+    const guests = await Promise.all(
+      Array.from({ length: 6 }, (_, i) =>
+        b.app.inject({ method: "POST", url: "/v1/auth/guest", remoteAddress: `10.6.8.${i}` }),
+      ),
+    );
+    const codes = await Promise.all(
+      guests.map((g, i) =>
+        b.app
+          .inject({
+            method: "POST",
+            url: "/v1/auth/register",
+            remoteAddress: `10.6.8.${i}`,
+            headers: { authorization: `Bearer ${g.json().accessToken}` },
+            payload: {
+              email: "race@example.com",
+              username: `racer_${i}`,
+              password: "correct horse battery",
+            },
+          })
+          .then((r) => r.statusCode),
+      ),
+    );
+    expect(codes.filter((c) => c === 201)).toHaveLength(1);
+    expect(codes.filter((c) => c === 409)).toHaveLength(5);
+
+    // The winner's refresh cookie from before the upgrade no longer works.
+    const winner = guests[codes.indexOf(201)]!;
+    const old = winner.cookies.find((c) => c.name === "ticker_rt")!.value;
+    expect((await post("/v1/auth/refresh", undefined, old)).statusCode).toBe(401);
+  });
+
   it("turns a guest into the new account, portfolio and all", async () => {
     const g = (
       await b.app.inject({ method: "POST", url: "/v1/auth/guest", remoteAddress: "10.6.6.6" })

@@ -37,6 +37,18 @@ export const NewOrder = z
         message: needsStop ? "required" : `not allowed for ${o.type} orders`,
       });
     }
+    // A buy stop-limit wakes up when the price rises to the stop, so a limit below the
+    // stop could never fill then (and the reverse for a sell).
+    if (o.type === "stop_limit" && o.price !== undefined && o.stopPrice !== undefined) {
+      const ok = o.side === "buy" ? o.price >= o.stopPrice : o.price <= o.stopPrice;
+      if (!ok)
+        ctx.addIssue({
+          code: "custom",
+          path: ["price"],
+          message:
+            o.side === "buy" ? "must be at or above the stop" : "must be at or below the stop",
+        });
+    }
     if ((o.takeProfit === undefined) !== (o.stopLoss === undefined)) {
       ctx.addIssue({ code: "custom", path: ["stopLoss"], message: "a bracket needs both exits" });
     } else if (o.takeProfit !== undefined && o.stopLoss !== undefined) {

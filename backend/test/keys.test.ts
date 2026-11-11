@@ -133,6 +133,12 @@ describe("API keys", () => {
       (await send(1)).statusCode,
     ];
     expect(codes).toEqual([201, 201, 429]);
+
+    // Amends count against the same limit.
+    await new Promise((r) => setTimeout(r, 1100));
+    const order = (await send(1)).json();
+    const amend = () => call(k.key, "PATCH", `/v1/orders/${order.id}`, { qty: 2 });
+    expect([(await amend()).statusCode, (await amend()).statusCode]).toEqual([200, 429]);
   });
 
   it("rejects bad keys, guests and a sixth key", async () => {
