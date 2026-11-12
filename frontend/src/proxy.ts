@@ -3,6 +3,7 @@ import { createHmac } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 
 import { API_URL, WS_URL } from "@/lib/api";
+import { visitorIp } from "@/lib/client-ip";
 import { contentSecurityPolicy } from "@/lib/csp";
 
 // A fresh nonce on every page request. Next.js reads it from the CSP request header and
@@ -27,14 +28,13 @@ export function proxy(request: NextRequest) {
 
 // /v1 calls are rewritten to the backend, which then sees Vercel's IP for every visitor.
 // Pass the visitor's IP along, signed with a secret the backend shares, so per-IP
-// sign-up and login limits still count people one by one. Vercel sets x-forwarded-for
-// to the visitor's IP itself, overwriting anything the browser sent.
+// sign-up and login limits still count people one by one.
 function forwardToBackend(request: NextRequest) {
   const headers = new Headers(request.headers);
   headers.delete("x-ticker-client-ip");
   headers.delete("x-ticker-client-sig");
   const secret = process.env.EDGE_SECRET;
-  const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
+  const ip = visitorIp(request.headers.get("x-forwarded-for"));
   if (secret && ip) {
     headers.set("x-ticker-client-ip", ip);
     headers.set("x-ticker-client-sig", createHmac("sha256", secret).update(ip).digest("base64url"));
