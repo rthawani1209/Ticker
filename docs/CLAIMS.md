@@ -25,7 +25,7 @@ Status: **done** = built and proven; **partial** = built, proof or number still 
 | ASan, UBSan and TSan in CI | done | `.github/workflows/engine.yml` | `scripts/check.sh` | |
 | Lock-free single-producer/single-consumer ring buffers | done | `spsc_ring.hpp`; `SpscRing.TwoThreadsKeepOrder` under TSan | `ctest --test-dir engine/build -R SpscRing` | |
 | epoll TCP server, one matching thread per shard | done | `engine/src/server/`; `ServerTest.*` | `ctest --test-dir engine/build -R ServerTest` | |
-| Compact fixed-size binary protocol | done | `protocol.hpp` static_asserts; `docs/protocol.md`; matching size tests in Python and TypeScript | `ctest --test-dir engine/build -R Protocol` | **NewOrder = 48 bytes** (Replace is 40) |
+| Compact fixed-size binary protocol | done | `protocol.hpp` static_asserts; `docs/protocol.md`; matching size tests in Python and TypeScript | `ctest --test-dir engine/build -R Protocol` | **NewOrder = 48 bytes** (Replace is 48 too) |
 | Journal with byte-identical replay | done | `JournalTest.ReplayIsByteIdentical`, `ServerTest.RestartRecoversBookFromJournal`, `ticker-replay` | `ctest --test-dir engine/build -R Journal` | |
 | Replay of a recorded trading day | planned (day 12) | | | |
 | Fuzzing the parser and the matching | done | `Protocol.FuzzParser` (200k random buffers); `engine/fuzz/book_fuzz.cpp`, a libFuzzer target that feeds raw wire bytes to the book and the reference book under ASan and UBSan; 5 minutes per CI run on a cached corpus | `scripts/check.sh --fuzz` | |
