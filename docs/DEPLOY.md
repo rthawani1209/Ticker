@@ -56,7 +56,7 @@ python3 -c "import secrets; print(secrets.randbits(63))"   # TICKER_TOKEN, a num
 
    - `?family=0` lets the Redis client use IPv6. Railway's private network is IPv6, and without it the client only tries IPv4.
    - `TRUST_PROXY=1` says one proxy (Railway's edge) sits in front of the backend. Only the address that proxy adds to `X-Forwarded-For` is believed, so a caller can't pick their own IP by sending the header.
-   - `EDGE_SECRET` must match the one on Vercel. The web app signs each visitor's IP with it when it forwards `/v1` calls, so per-IP limits (sign-ups, logins) count visitors, not Vercel.
+   - `EDGE_SECRET` must match the one on Vercel. The web app signs each visitor's IP with it when it forwards `/v1` calls, so per-IP limits (sign-ups, logins) count visitors, not Vercel. It signs the last `X-Forwarded-For` entry, which Vercel sets. If you host the web app yourself, put a proxy (nginx, Caddy) in front of `next start` that sets or appends that header. With nothing in front, the browser writes the whole header and can pick any IP.
    - Under Settings → Networking, **Generate Domain**. That gives you `https://<backend>.up.railway.app`.
    - The backend creates its tables on first start.
 5. Deploy. The backend's health check (`/health`) passes once it can reach Postgres and the engine. If it stays red, check that `ENGINE_TOKEN` equals the engine's `TICKER_TOKEN`.
