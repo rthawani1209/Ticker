@@ -177,6 +177,7 @@ describe("orders", () => {
       status: "open",
       stopPrice: 98_00,
       price: 98_50,
+      triggered: false,
     });
 
     // An ask below the limit doesn't fill it while the stop is waiting.
@@ -190,7 +191,7 @@ describe("orders", () => {
     await place(bob.token, { symbol: "VYNE", side: "sell", price: 98_00, qty: 1 });
     await place(dave.token, { symbol: "VYNE", side: "buy", price: 98_00, qty: 1, tif: "ioc" });
     await b.orders.settled();
-    expect(await get()).toMatchObject({ status: "filled", filledQty: 5 });
+    expect(await get()).toMatchObject({ status: "filled", filledQty: 5, triggered: true });
   });
 
   it("amends a resting order's price and size", async () => {

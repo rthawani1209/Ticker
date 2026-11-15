@@ -106,6 +106,7 @@ export interface Order {
   tif: "gtc" | "ioc" | "fok";
   price: number | null;
   stopPrice: number | null;
+  triggered: boolean;
   qty: number;
   leaves: number;
   filledQty: number;

@@ -48,6 +48,7 @@ export interface Order {
   tif: TifName;
   price: number | null;
   stopPrice: number | null;
+  triggered: boolean; // a stop whose price has traded: now a market or limit order
   qty: number;
   leaves: number;
   filledQty: number;
@@ -89,7 +90,7 @@ const TYPES: Record<TypeName, p.OrdType> = {
 const TIFS: Record<TifName, p.TIF> = { gtc: p.TIF.GTC, ioc: p.TIF.IOC, fok: p.TIF.FOK };
 
 const ORDER_COLUMNS = `o.id, pf.league_id, s.ticker AS symbol, o.side, o.type, o.tif, o.price, o.stop_price, o.qty, o.leaves,
-  o.filled_qty, o.status, o.reject_reason, o.take_profit, o.stop_loss, o.parent_id, o.created_at, o.updated_at`;
+  o.filled_qty, o.status, o.reject_reason, o.take_profit, o.stop_loss, o.parent_id, o.triggered_at, o.created_at, o.updated_at`;
 
 function toOrder(r: any): Order {
   return {
@@ -101,6 +102,7 @@ function toOrder(r: any): Order {
     tif: r.tif,
     price: r.price,
     stopPrice: r.stop_price,
+    triggered: r.triggered_at !== null,
     qty: r.qty,
     leaves: r.leaves,
     filledQty: r.filled_qty,
@@ -783,6 +785,15 @@ export class OrderService extends EventEmitter {
           [e.orderId, e.clOrdId, e.account],
         );
         if (r.rows[0]) ({ id, userId } = (await this.flagOutOfSync(r.rows[0].id, "lost")) ?? {});
+        break;
+      }
+      case p.EventType.Triggered: {
+        const r = await this.db.query(
+          `UPDATE orders SET triggered_at = now(), updated_at = now()
+           WHERE engine_order_id = $1 AND triggered_at IS NULL RETURNING id, user_id`,
+          [e.orderId],
+        );
+        ({ id, user_id: userId } = r.rows[0] ?? {});
         break;
       }
       case p.EventType.Replaced: {

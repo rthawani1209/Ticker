@@ -33,9 +33,13 @@ const time = new Intl.DateTimeFormat("en-US", {
 
 function describe(o: Order): string {
   if (o.type === "market") return "market";
-  if (o.type === "stop") return `stop ${formatPrice(o.stopPrice!)}`;
+  // Once the stop has traded the order is working, so say what it is now.
+  if (o.type === "stop")
+    return o.triggered ? "market · stopped" : `stop ${formatPrice(o.stopPrice!)}`;
   if (o.type === "stop_limit")
-    return `stop ${formatPrice(o.stopPrice!)} lmt ${formatPrice(o.price!)}`;
+    return o.triggered
+      ? `${formatPrice(o.price!)} · stopped`
+      : `stop ${formatPrice(o.stopPrice!)} lmt ${formatPrice(o.price!)}`;
   return formatPrice(o.price!);
 }
 
