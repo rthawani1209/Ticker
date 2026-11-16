@@ -208,6 +208,23 @@ describe("auth", () => {
     expect((await guess(rows[0].ip, "correct horse battery")).statusCode).toBe(200);
   });
 
+  it("caps guesses at an email with no account the same way", async () => {
+    const codes: number[] = [];
+    for (let i = 0; i < 32; i++)
+      codes.push(
+        (
+          await b.app.inject({
+            method: "POST",
+            url: "/v1/auth/login",
+            remoteAddress: `10.45.${i}.1`,
+            payload: { email: "Nobody.Here@example.com", password: "guessing guess" },
+          })
+        ).statusCode,
+      );
+    expect(codes.filter((c) => c === 401)).toHaveLength(30);
+    expect(codes.slice(30)).toEqual([429, 429]);
+  });
+
   it("caps a parallel burst of guesses too", async () => {
     await signUp(b, "burst_target");
     const codes = await Promise.all(

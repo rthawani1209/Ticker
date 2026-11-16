@@ -69,19 +69,21 @@ export default async function authRoutes(app: FastifyInstance) {
     };
   }
 
-  // Lots of recent login attempts at this account, and this IP has never got in. Each
-  // attempt is written down before it's counted (and before the password is checked),
-  // so a burst of parallel guesses can't all read the count before any of them adds to
-  // it: the attempt that commits k-th sees at least k.
-  async function underAttack(userId: number, ip: string): Promise<boolean> {
-    await audit(db, userId, "login_attempt", {}, ip);
+  // Lots of recent login attempts at this email, and this IP has never got in. Counted
+  // by email whether or not there's an account, so the 429 doesn't give away which
+  // addresses have one. Each attempt is written down before it's counted (and before
+  // the password is checked), so a burst of parallel guesses can't all read the count
+  // before any of them adds to it: the attempt that commits k-th sees at least k.
+  async function underAttack(email: string, userId: number | null, ip: string): Promise<boolean> {
+    email = email.toLowerCase();
+    await audit(db, userId, "login_attempt", { email }, ip);
     const { rows } = await db.query(
       `SELECT
-         (SELECT count(*)::int FROM audit_log WHERE user_id = $1 AND action = 'login_attempt'
+         (SELECT count(*)::int FROM audit_log WHERE action = 'login_attempt' AND detail->>'email' = $1
             AND created_at > now() - interval '15 minutes') AS failed,
-         EXISTS (SELECT 1 FROM audit_log WHERE user_id = $1 AND ip = $2
+         EXISTS (SELECT 1 FROM audit_log WHERE user_id = $2 AND ip = $3
             AND action IN ('login', 'register', 'guest') AND created_at > now() - interval '90 days') AS known`,
-      [userId, ip],
+      [email, userId, ip],
     );
     return rows[0].failed > ACCOUNT_GUESSES && !rows[0].known;
   }
@@ -200,10 +202,10 @@ export default async function authRoutes(app: FastifyInstance) {
       [body.email],
     );
     const user = rows[0];
-    if (user && (await underAttack(user.id, req.ip)))
+    if (await underAttack(body.email, user?.id ?? null, req.ip))
       return reply.code(429).send({
         error: "rate_limited",
-        message: "too many wrong passwords for this account, try again in a few minutes",
+        message: "too many attempts at this email, try again in a few minutes",
       });
     const ok = await verifyPassword(user?.password_hash ?? (await dummyHash()), body.password);
     if (!user || !ok) {
