@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { pruneLoginAttempts } from "../src/audit.js";
 import { auth, signUp, startBackend, type Backend } from "./harness.js";
 
 let b: Backend;
@@ -223,6 +224,23 @@ describe("auth", () => {
       );
     expect(codes.filter((c) => c === 401)).toHaveLength(30);
     expect(codes.slice(30)).toEqual([429, 429]);
+  });
+
+  it("prunes login attempts older than a day", async () => {
+    await b.db.query(
+      `INSERT INTO audit_log (action, detail, created_at) VALUES
+         ('login_attempt', '{"email":"old@example.com"}', now() - interval '2 days'),
+         ('login_attempt', '{"email":"new@example.com"}', now() - interval '1 hour'),
+         ('login_failed', '{"email":"old@example.com"}', now() - interval '2 days')`,
+    );
+    expect(await pruneLoginAttempts(b.db)).toBeGreaterThanOrEqual(1);
+    const { rows } = await b.db.query(
+      "SELECT action, detail->>'email' AS email FROM audit_log WHERE detail->>'email' IN ('old@example.com', 'new@example.com') ORDER BY action",
+    );
+    expect(rows).toEqual([
+      { action: "login_attempt", email: "new@example.com" },
+      { action: "login_failed", email: "old@example.com" },
+    ]);
   });
 
   it("caps a parallel burst of guesses too", async () => {

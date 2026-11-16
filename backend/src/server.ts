@@ -2,6 +2,7 @@ import { Redis } from "ioredis";
 
 import { ApiKeys } from "./auth/api-keys.js";
 import { buildApp } from "./app.js";
+import { pruneLoginAttempts } from "./audit.js";
 import { Tokens } from "./auth/tokens.js";
 import { loadConfig } from "./config.js";
 import { migrate } from "./db/migrate.js";
@@ -72,11 +73,16 @@ bridge.start().catch((err) => {
 
 await app.listen({ host: config.HOST, port: config.PORT });
 leaderboard.start();
+const prune = () =>
+  pruneLoginAttempts(db).catch((err) => app.log.warn(err, "couldn't prune login attempts"));
+void prune();
+const pruner = setInterval(prune, 60 * 60_000);
 
 for (const sig of ["SIGINT", "SIGTERM"] as const) {
   process.on(sig, async () => {
     bridge.stop();
     leaderboard.stop();
+    clearInterval(pruner);
     await app.close();
     await fanout.close();
     await db.end();
