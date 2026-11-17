@@ -128,6 +128,26 @@ describe("websocket", () => {
     for (const s of sockets) s.ws.close();
   });
 
+  it.runIf(process.env.REDIS_URL)(
+    "shares the order limit with the user's other gateways",
+    async () => {
+      const alice = await signUp(b);
+      // Another gateway already took this second's 20 orders for her.
+      const now = Date.now();
+      const key = `ws-orders:${alice.id}`;
+      for (let i = 0; i < 20; i++) await b.deps.redis!.zadd(key, now, `other:${i}`);
+      await b.deps.redis!.pexpire(key, 1000);
+      const { ws, next } = await connect(`?token=${alice.token}`);
+      send(ws, {
+        op: "order",
+        ref: "x",
+        order: { symbol: "QSTR", side: "buy", price: 11_00, qty: 1 },
+      });
+      expect(await next("error")).toMatchObject({ ref: "x", error: "rate_limited" });
+      ws.close();
+    },
+  );
+
   it("closes a socket that floods it and throttles book snapshots", async () => {
     const { ws, next } = await connect();
     for (let i = 0; i < 12; i++) {

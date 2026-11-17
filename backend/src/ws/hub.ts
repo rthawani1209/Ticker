@@ -61,7 +61,17 @@ interface Client {
   snapshots: number[]; // times of recent book snapshots
 }
 
-// Times of recent order/cancel messages per user, across all their sockets.
+// Sliding one-second window in Redis, so a user's sockets on different gateways share
+// one budget. Only accepted messages are counted, same as the in-memory version below.
+const WINDOW_SCRIPT = `
+redis.call("ZREMRANGEBYSCORE", KEYS[1], 0, ARGV[1] - 1000)
+if redis.call("ZCARD", KEYS[1]) >= tonumber(ARGV[2]) then return 0 end
+redis.call("ZADD", KEYS[1], ARGV[1], ARGV[3])
+redis.call("PEXPIRE", KEYS[1], 1000)
+return 1`;
+
+// Times of recent order/cancel messages per user, across all their sockets on this
+// gateway. Used when there's no Redis (one gateway, so that's everyone).
 function withinRate(recent: Map<number, number[]>, userId: number, now: number): boolean {
   const times = (recent.get(userId) ?? []).filter((t) => now - t < 1000);
   if (times.length >= ORDERS_PER_SECOND) {
@@ -74,10 +84,28 @@ function withinRate(recent: Map<number, number[]>, userId: number, now: number):
 }
 
 export default async function wsRoutes(app: FastifyInstance) {
-  const { bridge, config, db, fanout, orders, symbols, symbolsByTicker, tokens } = app.deps;
+  const { bridge, config, db, fanout, orders, redis, symbols, symbolsByTicker, tokens } = app.deps;
   const subscribers = new Map<string, Set<Client>>();
   const clients = new Set<Client>();
   const recentOrders = new Map<number, number[]>();
+  let seq = 0;
+  const allowOrder = async (userId: number, now: number): Promise<boolean> => {
+    if (!redis) return withinRate(recentOrders, userId, now);
+    const member = `${now}:${process.pid}:${seq++}:${Math.random()}`;
+    try {
+      const ok = await redis.eval(
+        WINDOW_SCRIPT,
+        1,
+        `ws-orders:${userId}`,
+        now,
+        ORDERS_PER_SECOND,
+        member,
+      );
+      return ok === 1;
+    } catch {
+      return withinRate(recentOrders, userId, now); // Redis is down: hold the line locally
+    }
+  };
   const socketsByUser = new Map<number, number>();
   const socketsByIp = new Map<string, number>();
   const bump = <K>(m: Map<K, number>, k: K, by: number) => {
@@ -279,7 +307,7 @@ export default async function wsRoutes(app: FastifyInstance) {
       if (c.userId === null) return fail("unauthorized", "auth first");
       const now = Date.now();
       if (now >= c.expiresAt) return fail("unauthorized", "session expired, send a fresh token");
-      if (!withinRate(recentOrders, c.userId, now)) return fail("rate_limited", "slow down");
+      if (!(await allowOrder(c.userId, now))) return fail("rate_limited", "slow down");
       try {
         if (msg.op === "order") {
           const parsed = NewOrder.safeParse(msg.order);
