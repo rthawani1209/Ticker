@@ -67,9 +67,13 @@ describe("websocket", () => {
     send(ws, { op: "subscribe", channel: "me:orders" });
     await next("subscribed");
 
+    const got = collect(ws, ["me:orders"]);
     await place(alice.token, { symbol: "BRKL", side: "buy", price: 7_400, qty: 2 });
     const update = await next("me:orders");
     expect(update.order).toMatchObject({ symbol: "BRKL", status: "open" });
+    // Each update arrives once, even though this gateway also hears its own publish.
+    await new Promise((r) => setTimeout(r, 200));
+    expect(got.filter((m) => m.data.order?.status === "open")).toHaveLength(1);
     ws.close();
   });
 
