@@ -27,7 +27,7 @@ Each type has exactly one valid length. A header with an unknown type, wrong len
 | 7    | Resume    | 8    | symbol u32 (admin only) |
 | 8    | Query     | 32   | same fields as Cancel |
 
-A Replace sets the order's open quantity to `qty`. With `expected_qty` non-zero, the engine first checks that the order still has exactly that much open and otherwise rejects with reason 11 (order changed): a fill that landed after the sender checked its limits would otherwise be added to the new size. A Query is answered with an event of type 12 (Status) carrying the order's open quantity in `leaves`, or reason 1 if the asker has no such open order.
+A Replace sets the order's open quantity to `qty`. With `expected_qty` non-zero, the engine first checks that the order still has exactly that much open and otherwise rejects with reason 11 (order changed): a fill that landed after the sender checked its limits would otherwise be added to the new size. The Replaced (or Reject) event goes to the session that sent the Replace, which need not be the one that placed the order; fills still go to the order's own session. A Query is answered with an event of type 12 (Status) carrying the order's open quantity in `leaves`, or reason 1 if the asker has no such open order.
 
 Prices are integer ticks (1 tick = 1 cent). `side`: 0 buy, 1 sell. `ord_type`: 0 limit, 1 market, 2 stop, 3 stop-limit. `tif`: 0 GTC, 1 IOC, 2 FOK.
 

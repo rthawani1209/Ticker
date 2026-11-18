@@ -10,7 +10,7 @@ Status: **done** = built and proven; **partial** = built, proof or number still 
 
 | Claim | Status | Proof | Re-check it | Measured |
 |---|---|---|---|---|
-| C++20 limit order book with price-time priority | done | `engine/tests/order_book_test.cpp` (`PriceThenTimePriority`, `SweepsSeveralLevels`, `CancelFromMiddleOfQueue`) | `ctest --test-dir engine/build -R BookTest` | 30 order book tests + 6 circuit breaker tests |
+| C++20 limit order book with price-time priority | done | `engine/tests/order_book_test.cpp` (`PriceThenTimePriority`, `SweepsSeveralLevels`, `CancelFromMiddleOfQueue`) | `ctest --test-dir engine/build -R BookTest` | 35 order book tests + 6 circuit breaker tests |
 | Market, limit, stop and stop-limit orders; GTC, IOC, FOK; cancel and cancel/replace | done | `order_book_test.cpp` (`IocNeverRests`, `FokKillsWhenNotFullyFillable`, `StopLimitRestsAfterTrigger`, `ReplaceDownKeepsPriority`...) | same as above | |
 | Self-trade prevention and price bands | done | `SelfTradePreventionCancelsIncoming`, `PriceBandFollowsLastTrade`, `MarketOrderStopsAtPriceBand` | same as above | bands at 10% from the last trade |
 | Self-trade prevention across one person's accounts (no wash trades between their league portfolios) | done | `stp_group` in `types.hpp`/`protocol.hpp`; `BookTest.SelfTradePreventionCoversAGroupOfAccounts`; `Differential.GroupedAccounts` (fuzz with grouped accounts); `backend/test/ledger.test.ts` (`self-trade prevention`) | `ctest --test-dir engine/build -R SelfTrade` and `cd backend && npm test` | |
@@ -56,7 +56,7 @@ Status: **done** = built and proven; **partial** = built, proof or number still 
 | Zod validation on every input, parameterized SQL only | done | `backend/src/routes/*.ts`; `validates input` tests | same | |
 | Sign-in links only go to pages on this site | done | `frontend/src/lib/redirect.ts`; `redirect.test.ts` (`refuses anything a browser would send to another host`) | `cd frontend && npx vitest run test/redirect.test.ts` | `/\evil`, `/%09/evil`, `//evil` all go to /trade |
 | Audit trail of logins, orders and cancels | done | `audit_log` table; `refresh_reuse` check in `auth.test.ts` | same | |
-| Integration tests against real Postgres and Redis | done | `backend/test/harness.ts`; `.github/workflows/backend.yml` | same | 132 tests |
+| Integration tests against real Postgres and Redis | done | `backend/test/harness.ts`; `.github/workflows/backend.yml` | same | 133 tests |
 | Redis pub/sub fan-out to WebSocket servers | done | `backend/src/ws/fanout.ts`; `backend/test/fanout.test.ts` (two gateways, a client on each gets every trade exactly once) | `cd backend && npx vitest run test/fanout.test.ts` | |
 | WebSocket delay with two gateways | done | [`docs/results/ws-delay-2026-11-06.json`](results/ws-delay-2026-11-06.json); `backend/scripts/ws-delay.ts` | `cd backend && npx tsx scripts/ws-delay.ts` | **p50 9 ms, p99 17 ms** (publishing gateway) and **p50 6 ms, p99 12 ms** (relay) to 500 clients, 250k messages each, no drops; one 4-vCPU VM with clients in the same process |
 | Order round trip under load (WebSockets, many users) | done | see the load test under Operations below | | **p50 9 ms, p99 48 ms** at 150 users and 150 orders/s, 0 errors |

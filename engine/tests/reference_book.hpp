@@ -449,7 +449,7 @@ private:
         e.type = EventType::Replaced;
         e.side = s;
         e.symbol = symbol_;
-        e.session = it->session;
+        e.session = c.session;
         e.account = it->account;
         e.order_id = it->id;
         e.cl_ord_id = c.cl_ord_id;

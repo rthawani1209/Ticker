@@ -322,6 +322,20 @@ TEST_F(BookTest, ReplaceToCrossingPriceTrades) {
     EXPECT_EQ(book.order_count(), 0u);
 }
 
+TEST_F(BookTest, ReplaceAnswersTheSessionThatAsked) {
+    // Placed through one gateway, amended through another; the fill still goes to the first.
+    OrderId bid = place(Side::Buy, 1000, 5, 2);
+    auto amend = replace(bid, 1005, 5, 2);
+    amend.session = 77;
+    place(Side::Sell, 1010, 1, 3);
+    auto evs = send(amend);
+    ASSERT_EQ(evs.at(0).type, EventType::Replaced);
+    EXPECT_EQ(evs[0].session, 77u);
+    auto fills = of_type(send(limit(Side::Sell, 1005, 5, 3)), EventType::Fill);
+    ASSERT_EQ(fills.size(), 2u);
+    EXPECT_EQ(fills[0].order_id == bid ? fills[0].session : fills[1].session, 2u);
+}
+
 TEST_F(BookTest, SnapshotListsLevelsBestFirst) {
     place(Side::Buy, 990, 1);
     place(Side::Buy, 995, 2);

@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { EngineBridge } from "../src/engine/bridge.js";
 import * as p from "../src/engine/protocol.js";
+import { OrderService } from "../src/orders.js";
 import { auth, signUp, startBackend, TOKEN, type Backend } from "./harness.js";
 
 let b: Backend;
@@ -192,6 +193,36 @@ describe("orders", () => {
     await place(dave.token, { symbol: "VYNE", side: "buy", price: 98_00, qty: 1, tif: "ioc" });
     await b.orders.settled();
     expect(await get()).toMatchObject({ status: "filled", filledQty: 5, triggered: true });
+  });
+
+  it("amends an order through a different gateway than the one that placed it", async () => {
+    const bid = (
+      await place(alice.token, { symbol: "KILN", side: "buy", price: 23_70, qty: 3 })
+    ).json();
+    // A second gateway with its own engine session, sharing only the database.
+    const bridge = new EngineBridge({
+      host: "127.0.0.1",
+      port: b.engine.port,
+      token: TOKEN,
+      refPrices: b.bridge.books.map(() => 100),
+      replay: false,
+    });
+    await bridge.start();
+    const other = new OrderService(b.db, bridge);
+    try {
+      // The engine answers whoever asked, so this gateway hears back instead of timing out.
+      const amended = await other.replace(alice.id, bid.id, { price: 23_80 });
+      expect(amended).toMatchObject({ status: "open", price: 23_80, leaves: 3 });
+    } finally {
+      bridge.stop();
+    }
+    await b.orders.settled();
+    const cancel = await b.app.inject({
+      method: "DELETE",
+      url: `/v1/orders/${bid.id}`,
+      headers: auth(alice.token),
+    });
+    expect(cancel.json()).toMatchObject({ status: "cancelled" });
   });
 
   it("amends a resting order's price and size", async () => {

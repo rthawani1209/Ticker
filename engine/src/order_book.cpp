@@ -409,7 +409,10 @@ void OrderBook::on_replace(const Command& cmd, std::vector<Event>& out) {
     e.type = EventType::Replaced;
     e.side = o->side;
     e.symbol = symbol_;
-    e.session = o->session;
+    // The answer goes to whoever asked, like a reject would: with several gateways the
+    // amend may come through a different one than the order did. Fills still go to
+    // the order's own session.
+    e.session = cmd.session;
     e.account = o->account;
     e.order_id = o->id;
     e.cl_ord_id = cmd.cl_ord_id;
