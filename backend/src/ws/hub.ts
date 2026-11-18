@@ -123,12 +123,25 @@ export default async function wsRoutes(app: FastifyInstance) {
     c.ws.send(JSON.stringify({ channel, data }));
   };
 
+  // Signed-in sockets by user, for their private order updates.
+  const socketsOf = new Map<number, Set<Client>>();
   const deliver = (channel: string, data: unknown) => {
+    // "user:<id>" is private: it goes out as "me:orders" to that user's sockets only.
+    if (channel.startsWith("user:")) {
+      for (const c of socketsOf.get(Number(channel.slice(5))) ?? []) send(c, "me:orders", data);
+      return;
+    }
     const subs = subscribers.get(channel);
     if (subs) for (const c of subs) send(c, channel, data);
   };
   const unsubscribe = fanout.subscribe(deliver);
   const publish = (channel: string, data: unknown) => fanout.publish(channel, data);
+  // Order updates and fills are written by whichever gateway heard the engine event,
+  // which needn't be the one the user's socket is on, so they go through the fan-out too.
+  const onOrder = (userId: number, order: Order) => publish(`user:${userId}`, { order });
+  const onFill = (userId: number, fill: unknown) => publish(`user:${userId}`, { fill });
+  orders.on("order", onOrder);
+  orders.on("fill", onFill);
 
   const onMarket = (e: p.EngineEvent) => {
     const ticker = symbols[e.symbol]?.ticker;
@@ -182,6 +195,8 @@ export default async function wsRoutes(app: FastifyInstance) {
     bridge.off("up", onUp);
     bridge.off("down", onDown);
     clearTimeout(resnap);
+    orders.off("order", onOrder);
+    orders.off("fill", onFill);
     unsubscribe();
   });
 
@@ -245,13 +260,11 @@ export default async function wsRoutes(app: FastifyInstance) {
       bump(socketsByUser, claims.userId, 1);
       c.userId = claims.userId;
       c.expiresAt = (claims.exp ?? 0) * 1000;
-      const onOrder = (o: Order) => send(c, "me:orders", { order: o });
-      const onFill = (f: unknown) => send(c, "me:orders", { fill: f });
-      orders.on(`user:${claims.userId}`, onOrder);
-      orders.on(`fill:${claims.userId}`, onFill);
+      const mine = socketsOf.get(claims.userId) ?? new Set<Client>();
+      socketsOf.set(claims.userId, mine.add(c));
       detach = () => {
-        orders.off(`user:${claims.userId}`, onOrder);
-        orders.off(`fill:${claims.userId}`, onFill);
+        mine.delete(c);
+        if (mine.size === 0) socketsOf.delete(claims.userId);
         bump(socketsByUser, claims.userId, -1);
       };
       return null;

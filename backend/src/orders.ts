@@ -225,6 +225,13 @@ export class OrderService extends EventEmitter {
     return (await this.get(userId, id))!;
   }
 
+  // "user:<id>" is for waiters in this process; "order" and "fill" carry every update
+  // so the socket hub can pass it to the user's sockets on any gateway.
+  private tell(userId: number, order: Order): void {
+    this.emit(`user:${userId}`, order);
+    this.emit("order", userId, order);
+  }
+
   // Bracket bookkeeping runs after an order's fill, ack or cancel has been written. It
   // runs outside the event queue (send() waits on that queue), one bracket at a time.
   private afterUpdate(orderId: number): void {
@@ -621,7 +628,7 @@ export class OrderService extends EventEmitter {
     );
     for (const r of rows) {
       const order = await this.get(r.user_id, r.id);
-      if (order) this.emit(`user:${r.user_id}`, order);
+      if (order) this.tell(r.user_id, order);
     }
     // Brackets whose entry finished while the exchange was away, or whose exits it
     // refused or couldn't be resized, get synced now. Not awaited: this runs inside the
@@ -739,7 +746,7 @@ export class OrderService extends EventEmitter {
         });
         if (fill) {
           this.afterUpdate(fill.orderId);
-          this.emit(`fill:${userId}`, {
+          this.emit("fill", userId, {
             ...fill,
             symbol: e.symbol,
             side: e.side === p.Side.Buy ? "buy" : "sell",
@@ -809,7 +816,7 @@ export class OrderService extends EventEmitter {
     }
     if (id !== undefined && userId !== undefined) {
       const order = await this.get(userId, id);
-      if (order) this.emit(`user:${userId}`, order);
+      if (order) this.tell(userId, order);
     }
   }
 
@@ -883,7 +890,7 @@ export class OrderService extends EventEmitter {
                     flagged++;
                     const o = await this.db.query("SELECT user_id FROM orders WHERE id = $1", [id]);
                     const order = await this.get(o.rows[0].user_id, id);
-                    if (order) this.emit(`user:${o.rows[0].user_id}`, order);
+                    if (order) this.tell(o.rows[0].user_id, order);
                   }
                   resolve();
                 });

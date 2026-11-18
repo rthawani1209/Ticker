@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { SignJWT } from "jose";
 import WebSocket from "ws";
 
+import { RedisFanout } from "../src/ws/fanout.js";
 import { auth, connectWs, signUp, startBackend, type Backend } from "./harness.js";
 
 let b: Backend;
@@ -145,6 +146,31 @@ describe("websocket", () => {
       });
       expect(await next("error")).toMatchObject({ ref: "x", error: "rate_limited" });
       ws.close();
+    },
+  );
+
+  it.runIf(process.env.REDIS_URL)(
+    "passes on order updates written by another gateway",
+    async () => {
+      const alice = await signUp(b);
+      const bob = await signUp(b);
+      const { ws, next } = await connect(`?token=${alice.token}`);
+      const got: unknown[] = [];
+      const other = await connect(`?token=${bob.token}`);
+      other.ws.on("message", (raw) => got.push(JSON.parse(String(raw))));
+      // Another gateway heard the engine event for Alice's order and publishes it.
+      const conn = b.deps.redis!.duplicate();
+      const elsewhere = new RedisFanout(conn);
+      await elsewhere.ready;
+      const order = { id: 999_999, status: "open", price: 23_80 };
+      elsewhere.publish(`user:${alice.id}`, { order });
+      expect(await next("me:orders")).toEqual({ order });
+      await new Promise((r) => setTimeout(r, 100));
+      expect(got.filter((m: any) => m.channel === "me:orders")).toEqual([]); // not Bob's
+      await elsewhere.close();
+      conn.disconnect();
+      ws.close();
+      other.ws.close();
     },
   );
 
