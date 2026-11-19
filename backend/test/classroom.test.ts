@@ -253,6 +253,21 @@ describe("classroom", () => {
         dueAt: "2020-01-01T00:00:00Z",
       }),
     ).toBe(400);
+
+    // Nobody could pass an assignment that needs a type the league doesn't allow.
+    const limitOnly = (
+      await req(owner, "POST", "/v1/leagues", { name: "Limits only", allowedTypes: ["limit"] })
+    ).json();
+    const use = (orderType: string) =>
+      req(owner, "POST", `/v1/classes/${limitOnly.id}/assignments`, {
+        title: "Use it",
+        kind: "use_order_type",
+        orderType,
+        dueAt: due,
+      });
+    expect((await use("market")).json()).toMatchObject({ error: "type_not_allowed" });
+    expect((await use("bracket")).statusCode).toBe(422);
+    expect((await use("limit")).statusCode).toBe(201);
   });
 
   it("takes a role away on the very next request", async () => {

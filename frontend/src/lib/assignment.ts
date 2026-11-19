@@ -1,5 +1,6 @@
 // Assignment wording and the create form, shared by the teacher and student views.
 import type { Assignment, AssignmentKind, NewAssignment } from "./api";
+import type { TicketType } from "./ticket";
 
 export const KINDS: { kind: AssignmentKind; label: string; unit: string }[] = [
   { kind: "return_at_least", label: "Return at least", unit: "%" },
@@ -37,7 +38,7 @@ export interface AssignmentForm {
   title: string;
   kind: AssignmentKind;
   target: string;
-  orderType: string;
+  orderType: TicketType;
   dueOn: string; // yyyy-mm-dd
 }
 

@@ -7,7 +7,7 @@ import { PriceCell } from "@/components/ui/PriceCell";
 import { leagues, me, type League, type NewOrder, type Session, type Side } from "@/lib/api";
 import { formatChange, formatPrice } from "@/lib/format";
 import { useQueryParam } from "@/lib/query";
-import type { Ticket } from "@/lib/ticket";
+import { allowedType, permitted, type Ticket } from "@/lib/ticket";
 
 import { Blotter } from "./Blotter";
 import { DepthLadder } from "./DepthLadder";
@@ -56,6 +56,16 @@ export function TradeScreen({ session }: { session: Session }) {
       new Date(l.startsAt) <= new Date() &&
       (!l.endsAt || new Date(l.endsAt) > new Date()),
   );
+  // A ?league= link to a league that hasn't started (or has ended) falls back to
+  // Practice, which is what the picker shows, instead of sending orders there to fail.
+  if (league !== undefined && leagueList.length > 0 && !tradable.some((l) => l.id === league)) {
+    setLeague(undefined);
+    setNotice({ ok: false, text: "That league isn't open for trading, so you're in Practice" });
+  }
+  // Switching to a league that forbids the ticket's type moves the ticket to one it allows.
+  const allowedTypes = leagueList.find((l) => l.id === league)?.allowedTypes;
+  if (allowedType(ticket.type, allowedTypes) !== ticket.type)
+    setTicket({ ...ticket, type: allowedType(ticket.type, allowedTypes) });
 
   const summary = t.symbols.find((s) => s.ticker === symbol);
   const last = summary?.last ?? 0;
@@ -84,6 +94,8 @@ export function TradeScreen({ session }: { session: Session }) {
     if (!Number.isInteger(qty) || qty <= 0) {
       return setNotice({ ok: false, text: "Set a quantity in the ticket first" });
     }
+    if (!permitted("limit", allowedTypes))
+      return setNotice({ ok: false, text: "This league doesn't allow limit orders" });
     setTicket((tk) => ({ ...tk, side, price: formatPrice(price).replace(/,/g, "") }));
     const error = await send({ symbol, side, type: "limit", qty, price });
     setNotice(
@@ -245,7 +257,7 @@ export function TradeScreen({ session }: { session: Session }) {
             last={last}
             cash={t.portfolio?.cash ?? null}
             ticket={ticket}
-            allowed={leagueList.find((l) => l.id === league)?.allowedTypes}
+            allowed={allowedTypes}
             onChange={setTicket}
             onSubmit={send}
           />

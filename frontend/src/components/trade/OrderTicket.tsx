@@ -4,7 +4,7 @@ import { forwardRef, useState, type FormEvent } from "react";
 
 import type { OrderType } from "@/lib/api";
 import { formatMoney, formatPrice, parseDollars } from "@/lib/format";
-import { ticketOrder, type Ticket, type TicketType } from "@/lib/ticket";
+import { permitted as allows, ticketOrder, type Ticket, type TicketType } from "@/lib/ticket";
 
 import styles from "./OrderTicket.module.css";
 
@@ -34,10 +34,7 @@ export const OrderTicket = forwardRef<HTMLInputElement, Props>(function OrderTic
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const set = (patch: Partial<Ticket>) => onChange({ ...ticket, ...patch });
-  // A bracket's exits are a limit and a stop, so it needs both.
-  const permitted = (t: TicketType) =>
-    !allowed ||
-    (t === "bracket" ? allowed.includes("limit") && allowed.includes("stop") : allowed.includes(t));
+  const permitted = (t: TicketType) => allows(t, allowed);
 
   const order = ticketOrder(ticket, symbol);
   const qty = Number(ticket.qty) || 0;

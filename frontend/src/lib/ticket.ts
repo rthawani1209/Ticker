@@ -13,6 +13,23 @@ export interface Ticket {
   stopLoss: string;
 }
 
+// Whether a league allows a ticket type. A bracket's exits are a limit and a stop, so
+// it needs both. No list means every type.
+export function permitted(type: TicketType, allowed?: string[]): boolean {
+  if (!allowed) return true;
+  return type === "bracket"
+    ? allowed.includes("limit") && allowed.includes("stop")
+    : allowed.includes(type);
+}
+
+const ORDER: TicketType[] = ["limit", "market", "stop", "stop_limit", "bracket"];
+
+// The ticket's type if the league allows it, otherwise the first one it does.
+export function allowedType(type: TicketType, allowed?: string[]): TicketType {
+  if (permitted(type, allowed)) return type;
+  return ORDER.find((t) => permitted(t, allowed)) ?? type;
+}
+
 // Turns what's typed in the ticket into an order, or says what's wrong with it.
 export function ticketOrder(t: Ticket, symbol: string): NewOrder | string {
   const qty = Number(t.qty);

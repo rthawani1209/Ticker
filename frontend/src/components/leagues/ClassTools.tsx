@@ -23,6 +23,7 @@ import {
 } from "@/lib/assignment";
 import { direction, formatMoney } from "@/lib/format";
 import { formatPct } from "@/lib/league";
+import { allowedType, permitted, type TicketType } from "@/lib/ticket";
 
 import styles from "./ClassTools.module.css";
 
@@ -306,6 +307,10 @@ function Assignments({
   const [problem, setProblem] = useState<{ field: string; message: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState<number | null>(null);
+  // Only offer order types the league allows; no student could complete the others.
+  const types = ORDER_TYPES.filter((t) => permitted(t, league.allowedTypes));
+  if (allowedType(form.orderType, league.allowedTypes) !== form.orderType)
+    setForm({ ...form, orderType: allowedType(form.orderType, league.allowedTypes) });
 
   const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) => {
     setForm((f) => ({ ...f, [k]: v }));
@@ -379,8 +384,11 @@ function Assignments({
         {form.kind === "use_order_type" ? (
           <label>
             <span className="label">Order type</span>
-            <select value={form.orderType} onChange={(e) => set("orderType", e.target.value)}>
-              {ORDER_TYPES.map((t) => (
+            <select
+              value={form.orderType}
+              onChange={(e) => set("orderType", e.target.value as TicketType)}
+            >
+              {types.map((t) => (
                 <option key={t} value={t}>
                   {t.replace("_", "-")}
                 </option>

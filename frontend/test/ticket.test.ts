@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { parseDollars } from "@/lib/format";
-import { amendChange, ticketOrder, type Ticket } from "@/lib/ticket";
+import { allowedType, amendChange, permitted, ticketOrder, type Ticket } from "@/lib/ticket";
 
 const base: Ticket = {
   side: "buy",
@@ -81,5 +81,23 @@ describe("amend", () => {
   it("says what's wrong", () => {
     expect(amendChange("abc", "10", now)).toBe("Enter a price in dollars and cents");
     expect(amendChange("141", "0", now)).toBe("Enter a whole number of shares");
+  });
+});
+
+describe("league order types", () => {
+  it("allows everything when the league doesn't say", () => {
+    expect(permitted("bracket")).toBe(true);
+    expect(allowedType("stop_limit")).toBe("stop_limit");
+  });
+
+  it("needs a limit and a stop for a bracket", () => {
+    expect(permitted("bracket", ["limit", "market"])).toBe(false);
+    expect(permitted("bracket", ["limit", "stop"])).toBe(true);
+  });
+
+  it("moves a forbidden type to the first one allowed", () => {
+    expect(allowedType("limit", ["market"])).toBe("market");
+    expect(allowedType("bracket", ["stop", "stop_limit"])).toBe("stop");
+    expect(allowedType("market", ["limit", "market"])).toBe("market");
   });
 });

@@ -59,13 +59,13 @@ export default async function classroomRoutes(app: FastifyInstance) {
   async function ownedLeague(req: FastifyRequest) {
     const { id } = Id.parse(req.params);
     const { rows } = await db.query(
-      "SELECT id, name, owner_id, is_practice FROM leagues WHERE id = $1",
+      "SELECT id, name, owner_id, is_practice, allowed_types::text[] AS allowed_types FROM leagues WHERE id = $1",
       [id],
     );
     const league = rows[0];
     if (!league || (req.user.role !== "admin" && league.owner_id !== req.user.userId))
       throw new ApiError(404, "not_found", "no such league, or it isn't yours");
-    return league as { id: number; name: string };
+    return league as { id: number; name: string; allowed_types: string[] };
   }
 
   async function roster(leagueId: number) {
@@ -187,6 +187,11 @@ export default async function classroomRoutes(app: FastifyInstance) {
   app.post("/:id/assignments", async (req, reply) => {
     const league = await ownedLeague(req);
     const body = NewAssignment.parse(req.body);
+    // An assignment no student could complete is a mistake, so refuse it up front.
+    const need =
+      body.orderType === "bracket" ? ["limit", "stop"] : body.orderType ? [body.orderType] : [];
+    if (!need.every((t) => league.allowed_types.includes(t)))
+      throw new ApiError(422, "type_not_allowed", "this league doesn't allow that order type");
     const { rows } = await db.query(
       `INSERT INTO assignments (league_id, title, kind, target, order_type, due_at, created_by)
        VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING ${ASSIGNMENT_COLUMNS}`,
