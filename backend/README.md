@@ -46,12 +46,12 @@ Bracket orders: the gateway keeps both exits (a take-profit limit and a stop-los
 
 - If the connection to the engine drops, replies sent while it was down are lost. On reconnect, orders still waiting for an acknowledgement are marked rejected (`exchange_unavailable`). If the engine did accept one, its next fill or cancel carries our order id and brings it back. Fills that happen while the backend is disconnected are not recovered yet. The fix is for the engine to number its output and replay from a sequence number when a session logs back on.
 - Run the engine with `--journal-dir` in any real deployment so resting orders survive an engine restart.
-- Set `TRUST_PROXY=true` only behind a load balancer that sets `X-Forwarded-For`. Otherwise clients could choose their own IP and dodge the per-IP limits.
+- Set `TRUST_PROXY` to the number of proxies in front of the backend (1 on Railway), and only behind proxies that set `X-Forwarded-For`. Otherwise clients could choose their own IP and dodge the per-IP limits.
 
 ## Running it
 
 ```bash
-cp .env.example .env            # then edit
+cp .env.example .env            # then edit; npm run dev and npm run migrate read it
 npm install
 npm run migrate
 npm run dev
