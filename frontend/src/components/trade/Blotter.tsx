@@ -150,6 +150,7 @@ export function Blotter({ portfolio, orders, fills, onCancel, onAmend, onPick }:
                       className={styles.edit}
                       inputMode="decimal"
                       aria-label="New price"
+                      autoFocus
                       value={edit.price}
                       onChange={(e) => setEdit({ ...edit, price: e.target.value })}
                       onKeyDown={(e) => editKey(e, o)}
@@ -174,11 +175,7 @@ export function Blotter({ portfolio, orders, fills, onCancel, onAmend, onPick }:
                   ) : (
                     `${o.filledQty}/${o.qty}`
                   ),
-                  editing && editError ? (
-                    <span key="e" className={styles.editError} role="alert">
-                      {editError}
-                    </span>
-                  ) : o.rejectReason === "out_of_sync" ? (
+                  o.rejectReason === "out_of_sync" ? (
                     <span
                       key="s"
                       className={styles.editError}
@@ -189,7 +186,13 @@ export function Blotter({ portfolio, orders, fills, onCancel, onAmend, onPick }:
                   ) : (
                     o.status.replace("_", " ")
                   ),
-                  <span key="c" className={styles.actions}>
+                  <span key="c" className={styles.actions} data-editing={editing || undefined}>
+                    {/* Next to Save rather than under Status, which a phone has scrolled away. */}
+                    {editing && editError && (
+                      <span className={styles.editNote} role="alert">
+                        {editError}
+                      </span>
+                    )}
                     {editing ? (
                       <>
                         <button type="button" className={styles.save} onClick={() => save(o)}>

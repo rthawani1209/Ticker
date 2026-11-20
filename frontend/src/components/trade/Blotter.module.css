@@ -168,8 +168,44 @@
   color: var(--down);
 }
 
+.actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+/* Wide enough for Save and Back side by side, with any error wrapping under them. */
+.actions[data-editing] {
+  width: 18ch;
+}
+
+.editNote {
+  order: 1;
+  flex-basis: 100%;
+  color: var(--down);
+  font-size: 11px;
+  text-align: right;
+  white-space: normal;
+}
+
 .empty {
   margin: 0;
   padding: var(--s-6) var(--s-4);
   color: var(--text-3);
+}
+
+/* Phones: the table scrolls sideways, so keep the last column (Amend, Save, Cancel)
+   pinned to the right edge where it can always be reached. */
+@media (max-width: 640px) {
+  .table th,
+  .table td {
+    padding: 8px 10px;
+  }
+
+  .table th:last-child,
+  .table td:last-child {
+    position: sticky;
+    right: 0;
+    background: var(--ink-0);
+    box-shadow: -1px 0 0 var(--line);
+  }
 }

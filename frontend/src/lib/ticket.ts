@@ -65,6 +65,10 @@ export function ticketOrder(t: Ticket, symbol: string): NewOrder | string {
 }
 
 // Reads the blotter's Amend fields. Blank keeps what the order has now.
+// The API's limits, so the editor can say so in words instead of "failed validation".
+const MAX_QTY = 100_000;
+const MAX_PRICE = 10_000_000; // cents
+
 export function amendChange(
   price: string,
   qty: string,
@@ -74,11 +78,13 @@ export function amendChange(
   if (price.trim()) {
     const p = parseDollars(price);
     if (!p) return "Enter a price in dollars and cents";
+    if (p > MAX_PRICE) return "Prices go up to $100,000.00";
     if (p !== current.price) change.price = p;
   }
   if (qty.trim()) {
     const q = Number(qty);
     if (!Number.isInteger(q) || q <= 0) return "Enter a whole number of shares";
+    if (q > MAX_QTY) return "At most 100,000 shares still to fill";
     if (q !== current.leaves) change.qty = q;
   }
   return change.price === undefined && change.qty === undefined ? "Nothing to change" : change;

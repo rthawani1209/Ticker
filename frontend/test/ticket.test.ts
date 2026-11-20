@@ -81,6 +81,8 @@ describe("amend", () => {
   it("says what's wrong", () => {
     expect(amendChange("abc", "10", now)).toBe("Enter a price in dollars and cents");
     expect(amendChange("141", "0", now)).toBe("Enter a whole number of shares");
+    expect(amendChange("141", "100001", now)).toBe("At most 100,000 shares still to fill");
+    expect(amendChange("100000.01", "10", now)).toBe("Prices go up to $100,000.00");
   });
 });
 
