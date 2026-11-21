@@ -201,6 +201,36 @@ describe("the evasions QA found", () => {
     expect(pair.flagged).toBe(true);
   });
 
+  // Round 3: few trades, big money; a relay through a third account; wash trades at
+  // the market price to water down the average.
+  it("catches two big gifts, however few trades", () => {
+    const pair = collusion([trade(1, 2, 5000, 0.2), trade(1, 2, 5000, 0.2)], new Map())[0]!;
+    expect(pair).toMatchObject({ trades: 2, moved: 200_000_00, flagged: true });
+  });
+
+  it("catches money passed on through a third account", () => {
+    const relay = [trade(1, 3, 2000, 0.15), trade(3, 2, 2000, 0.15)];
+    const pairs = collusion(relay, new Map());
+    expect(pairs.filter((p) => p.flagged).map((p) => `${p.a}-${p.b}`)).toEqual(["1-3", "2-3"]);
+  });
+
+  it("isn't watered down by wash trades at the market price", () => {
+    const trades = [
+      trade(1, 2, 500, 0.09),
+      ...Array.from({ length: 20 }, (_, i) =>
+        i % 2 ? trade(1, 2, 5000, 0) : trade(2, 1, 5000, 0),
+      ),
+    ];
+    const pair = collusion(trades, new Map())[0]!;
+    expect(pair.offMarket).toBeLessThan(0.001);
+    expect(pair).toMatchObject({ moved: 4_500_00, flagged: true });
+  });
+
+  it("nets gifts that go both ways", () => {
+    const pair = collusion([trade(1, 2, 500, 0.09), trade(2, 1, 500, 0.09)], new Map())[0]!;
+    expect(pair).toMatchObject({ moved: 0, flagged: false });
+  });
+
   it("still leaves classmates trading at the market alone", () => {
     expect(flagged(Array.from({ length: 50 }, () => trade(1, 2, 10, 0.002)))).toBe(false);
   });
@@ -218,6 +248,23 @@ describe("the evasions QA found", () => {
       ...Array.from({ length: 2 }, () => order("sell", 20, 20, false)),
     ];
     expect(spoofing(orders)).toMatchObject({ flagged: true, oppositeFills: 2 });
+  });
+
+  it("catches spoof orders that let a tenth or more fill first", () => {
+    const orders = [
+      ...Array.from({ length: 30 }, () => order("buy", 1000, 150, true)),
+      ...Array.from({ length: 2 }, () => order("sell", 20, 20, false)),
+    ];
+    expect(spoofing(orders)).toMatchObject({ flagged: true, pulledQty: 1000 });
+  });
+
+  it("isn't fooled by one big order that filled", () => {
+    const orders = [
+      ...Array.from({ length: 30 }, () => order("buy", 1000, 0, true)),
+      ...Array.from({ length: 2 }, () => order("sell", 20, 20, false)),
+      order("sell", 5000, 5000, false),
+    ];
+    expect(spoofing(orders)).toMatchObject({ flagged: true, filledQty: 20, sizeRatio: 50 });
   });
 
   it("doesn't flag a market maker whose big quotes sometimes fill a little", () => {

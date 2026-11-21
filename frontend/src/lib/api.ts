@@ -339,6 +339,7 @@ export interface PairCheck {
   shareOfA: number;
   shareOfB: number;
   offMarket: number | null;
+  moved: number; // cents
   flagged: boolean;
 }
 
@@ -346,8 +347,8 @@ export interface OrderCheck {
   username: string;
   orders: number;
   cancelRate: number;
-  avgCancelledQty: number;
-  avgFilledQty: number;
+  pulledQty: number;
+  filledQty: number;
   sizeRatio: number | null;
   oppositeFills: number;
   flagged: boolean;
@@ -355,7 +356,13 @@ export interface OrderCheck {
 
 export interface FairPlay {
   thresholds: {
-    collusion: { minTrades: number; minShare: number; minOffMarket: number; farOffMarket: number };
+    collusion: {
+      minTrades: number;
+      minShare: number;
+      minOffMarket: number;
+      farOffMarket: number;
+      minMoved: number; // cents
+    };
     spoofing: { minOrders: number; minCancelRate: number; minSizeRatio: number };
   };
   collusion: PairCheck[];

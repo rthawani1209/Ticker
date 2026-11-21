@@ -153,7 +153,8 @@ function FairPlayChecks({ checks, onRefresh }: { checks: FairPlay | null; onRefr
         Flagged when two people make {c.minTrades}+ trades together at prices on average{" "}
         {pct(c.minOffMarket)}+ away from the middle of the book (weighted by shares), and
         that&apos;s at least {pct(c.minShare)} of one person&apos;s trading or {pct(c.farOffMarket)}
-        + off. That&apos;s how one account hands its gains to another.
+        + off, or when those prices hand {formatMoney(c.minMoved)}+ one way however few trades it
+        took. That&apos;s how one account hands its gains to another.
       </p>
       {checks.collusion.length === 0 ? (
         <p className={ui.empty}>No one in this league has traded with a classmate yet.</p>
@@ -168,6 +169,7 @@ function FairPlayChecks({ checks, onRefresh }: { checks: FairPlay | null; onRefr
                 <th>Shares</th>
                 <th>Share of each</th>
                 <th>Off market</th>
+                <th>Moved</th>
               </tr>
             </thead>
             <tbody>
@@ -185,6 +187,7 @@ function FairPlayChecks({ checks, onRefresh }: { checks: FairPlay | null; onRefr
                     {pct(p.shareOfA)} / {pct(p.shareOfB)}
                   </td>
                   <td>{pct(p.offMarket, 1)}</td>
+                  <td>{p.moved ? formatMoney(p.moved) : "—"}</td>
                 </tr>
               ))}
             </tbody>
@@ -194,10 +197,11 @@ function FairPlayChecks({ checks, onRefresh }: { checks: FairPlay | null; onRefr
 
       <h3 className="label">Order patterns</h3>
       <p className={styles.rule}>
-        Flagged when someone sends {s.minOrders}+ orders, pulls {pct(s.minCancelRate)}+ of them with
-        less than a tenth filled, the pulled ones are {s.minSizeRatio}x+ bigger than the ones that
-        fill, and the fills are on the other side. Big fake orders to move the price for a small
-        real one is spoofing. A market-making bot cancels a lot too, but at the same size it trades.
+        Flagged when someone sends {s.minOrders}+ orders, pulls {pct(s.minCancelRate)}+ of them
+        before half filled, the pulled ones are typically {s.minSizeRatio}x+ bigger than the ones
+        that fill (by median, so one big order doesn&apos;t skew it), and the fills are on the other
+        side. Big fake orders to move the price for a small real one is spoofing. A market-making
+        bot cancels a lot too, but at the same size it trades.
       </p>
       {checks.spoofing.length === 0 ? (
         <p className={ui.empty}>No orders yet.</p>
@@ -210,8 +214,8 @@ function FairPlayChecks({ checks, onRefresh }: { checks: FairPlay | null; onRefr
                 <th>Student</th>
                 <th>Orders</th>
                 <th>Cancelled</th>
-                <th>Avg cancelled</th>
-                <th>Avg filled</th>
+                <th>Typical pulled</th>
+                <th>Typical filled</th>
                 <th>Size ratio</th>
               </tr>
             </thead>
@@ -224,12 +228,10 @@ function FairPlayChecks({ checks, onRefresh }: { checks: FairPlay | null; onRefr
                   <td>{r.username}</td>
                   <td>{r.orders}</td>
                   <td>{pct(r.cancelRate)}</td>
-                  <td>{shares(r.avgCancelledQty)}</td>
-                  <td>{shares(r.avgFilledQty)}</td>
+                  <td>{shares(r.pulledQty)}</td>
+                  <td>{shares(r.filledQty)}</td>
                   <td>
-                    {r.sizeRatio === null || r.avgCancelledQty === 0
-                      ? "—"
-                      : `${r.sizeRatio.toFixed(1)}x`}
+                    {r.sizeRatio === null || r.pulledQty === 0 ? "—" : `${r.sizeRatio.toFixed(1)}x`}
                   </td>
                 </tr>
               ))}
