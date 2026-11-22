@@ -369,7 +369,25 @@ export interface FairPlay {
   spoofing: OrderCheck[];
 }
 
+// An order the exchange and the ledger may disagree on, waiting for the teacher.
+export interface FlaggedOrder {
+  id: number;
+  username: string;
+  symbol: string;
+  side: Side;
+  type: OrderType;
+  qty: number;
+  filledQty: number;
+  leaves: number;
+  status: Order["status"];
+  updatedAt: string;
+}
+
 export const classroom = {
+  flagged: (token: string, id: number) =>
+    call<FlaggedOrder[]>(`/v1/classes/${id}/flagged`, { token }),
+  closeFlagged: (token: string, id: number, orderId: number) =>
+    call<Order>(`/v1/classes/${id}/flagged/${orderId}/close`, { method: "POST", token }),
   fairPlay: (token: string, id: number) => call<FairPlay>(`/v1/classes/${id}/fairplay`, { token }),
   roster: (token: string, id: number) => call<RosterRow[]>(`/v1/classes/${id}/roster`, { token }),
   assignments: (token: string, id: number) =>

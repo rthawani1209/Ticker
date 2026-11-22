@@ -23,6 +23,7 @@ import { gradeAssignment, toAssignment, type Assignment } from "../grading.js";
 
 const Id = z.object({ id: z.coerce.number().int().positive() });
 const AssignmentId = Id.extend({ aid: z.coerce.number().int().positive() });
+const FlaggedId = Id.extend({ oid: z.coerce.number().int().positive() });
 
 const NewAssignment = z
   .object({
@@ -213,6 +214,53 @@ export default async function classroomRoutes(app: FastifyInstance) {
       req.ip,
     );
     return reply.code(201).send(assignmentView(toAssignment(rows[0])));
+  });
+
+  // Orders flagged out_of_sync in this league: the exchange and the ledger may disagree,
+  // so a person has to look. Newest first.
+  app.get("/:id/flagged", async (req) => {
+    const league = await ownedLeague(req);
+    const { rows } = await db.query(
+      `SELECT o.id, u.username, s.ticker AS symbol, o.side, o.type, o.qty, o.filled_qty, o.leaves,
+              o.status, o.updated_at
+       FROM orders o JOIN portfolios pf ON pf.id = o.portfolio_id JOIN users u ON u.id = o.user_id
+       JOIN symbols s ON s.id = o.symbol_id
+       WHERE pf.league_id = $1 AND o.reject_reason = 'out_of_sync'
+       ORDER BY o.updated_at DESC LIMIT 200`,
+      [league.id],
+    );
+    return rows.map((r) => ({
+      id: Number(r.id),
+      username: r.username,
+      symbol: r.symbol,
+      side: r.side,
+      type: r.type,
+      qty: r.qty,
+      filledQty: r.filled_qty,
+      leaves: r.leaves,
+      status: r.status,
+      updatedAt: r.updated_at.toISOString(),
+    }));
+  });
+
+  app.post("/:id/flagged/:oid/close", async (req) => {
+    const league = await ownedLeague(req);
+    const { oid } = FlaggedId.parse(req.params);
+    const { rows } = await db.query(
+      `SELECT 1 FROM orders o JOIN portfolios pf ON pf.id = o.portfolio_id
+       WHERE o.id = $1 AND pf.league_id = $2`,
+      [oid, league.id],
+    );
+    if (!rows[0]) throw new ApiError(404, "not_found", "no such order in this league");
+    const order = await orders.closeFlagged(oid);
+    await audit(
+      db,
+      req.user.userId,
+      "order_close_flagged",
+      { leagueId: league.id, orderId: oid },
+      req.ip,
+    );
+    return order;
   });
 
   app.delete("/:id/assignments/:aid", async (req, reply) => {

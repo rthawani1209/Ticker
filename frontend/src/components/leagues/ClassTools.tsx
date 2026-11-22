@@ -9,6 +9,7 @@ import {
   classroom,
   type Assignment,
   type FairPlay,
+  type FlaggedOrder,
   type Grade,
   type League,
   type RosterRow,
@@ -44,6 +45,7 @@ export function ClassTools({
   const [roster, setRoster] = useState<RosterRow[] | null>(null);
   const [work, setWork] = useState<(Assignment & { grades: Grade[] })[] | null>(null);
   const [checks, setChecks] = useState<FairPlay | null>(null);
+  const [flagged, setFlagged] = useState<FlaggedOrder[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(() => {
@@ -51,12 +53,14 @@ export function ClassTools({
       classroom.roster(token, league.id),
       classroom.assignments(token, league.id),
       classroom.fairPlay(token, league.id),
+      classroom.flagged(token, league.id),
     ]).then(
-      ([r, a, f]) => {
+      ([r, a, f, o]) => {
         // The teacher is a member of their own league; leave them out of the class lists.
         setRoster(r.filter((x) => x.userId !== meId));
         setWork(a);
         setChecks(f);
+        setFlagged(o);
         setError(null);
       },
       (e) => setError(e instanceof ApiError ? e.message : "couldn't load the class"),
@@ -98,7 +102,9 @@ export function ClassTools({
           >
             Fair play{" "}
             {checks && (
-              <span data-alert={flagCount(checks) > 0 || undefined}>{flagCount(checks)}</span>
+              <span data-alert={flagCount(checks, flagged) > 0 || undefined}>
+                {flagCount(checks, flagged)}
+              </span>
             )}
           </button>
         </div>
@@ -121,14 +127,29 @@ export function ClassTools({
       ) : tab === "assignments" ? (
         <Assignments token={token} league={league} meId={meId} work={work} onChange={load} />
       ) : (
-        <FairPlayChecks checks={checks} onRefresh={load} />
+        <FairPlayChecks
+          checks={checks}
+          flagged={flagged}
+          onRefresh={load}
+          onClose={(id) =>
+            classroom
+              .closeFlagged(token, league.id, id)
+              .then(load, (e) =>
+                setError(e instanceof ApiError ? e.message : "couldn't close that order"),
+              )
+          }
+        />
       )}
     </section>
   );
 }
 
-const flagCount = (f: FairPlay) =>
-  f.collusion.filter((p) => p.flagged).length + f.spoofing.filter((s) => s.flagged).length;
+const isOpen = (o: FlaggedOrder) => o.status === "open" || o.status === "partially_filled";
+
+const flagCount = (f: FairPlay, orders: FlaggedOrder[]) =>
+  f.collusion.filter((p) => p.flagged).length +
+  f.spoofing.filter((s) => s.flagged).length +
+  orders.filter(isOpen).length;
 
 const shares = (n: number) => (n ? `${Math.round(n).toLocaleString("en-US")} sh` : "—");
 
@@ -136,9 +157,25 @@ const pct = (x: number | null, digits = 0) => (x === null ? "—" : `${(x * 100)
 
 // Collusion and spoofing checks. They only point at something worth a look; the
 // numbers are there so the teacher can decide.
-function FairPlayChecks({ checks, onRefresh }: { checks: FairPlay | null; onRefresh: () => void }) {
+function FairPlayChecks({
+  checks,
+  flagged,
+  onRefresh,
+  onClose,
+}: {
+  checks: FairPlay | null;
+  flagged: FlaggedOrder[];
+  onRefresh: () => void;
+  onClose: (orderId: number) => Promise<void>;
+}) {
+  const [closing, setClosing] = useState<number | null>(null);
   if (!checks) return <p className={ui.empty}>Loading…</p>;
   const { collusion: c, spoofing: s } = checks.thresholds;
+  const close = async (id: number) => {
+    setClosing(id);
+    await onClose(id);
+    setClosing(null);
+  };
   return (
     <div className={styles.fair}>
       <div className={styles.fairHead}>
@@ -147,6 +184,55 @@ function FairPlayChecks({ checks, onRefresh }: { checks: FairPlay | null; onRefr
           Run again
         </Button>
       </div>
+
+      {flagged.length > 0 && (
+        <>
+          <h3 className="label">Orders to check</h3>
+          <p className={styles.rule}>
+            The exchange may have filled or cancelled these while the server was restarting, and the
+            app couldn&apos;t tell which. Closing one stops it holding the student&apos;s cash or
+            shares back (if the exchange still has it, it&apos;s cancelled there). If it had filled,
+            the student&apos;s cash and position need fixing by hand; see the deploy guide.
+          </p>
+          <div className={ui.scroll}>
+            <table className={`mono ${ui.table} ${styles.checks}`}>
+              <thead>
+                <tr className="label">
+                  <th>Student</th>
+                  <th>Order</th>
+                  <th>Filled</th>
+                  <th>Status</th>
+                  <th aria-label="Action" />
+                </tr>
+              </thead>
+              <tbody>
+                {flagged.map((o) => (
+                  <tr key={o.id} data-flagged={isOpen(o) || undefined}>
+                    <td>{o.username}</td>
+                    <td>
+                      {o.side} {o.qty.toLocaleString("en-US")} {o.symbol}{" "}
+                      <span className={styles.muted}>#{o.id}</span>
+                    </td>
+                    <td>{o.filledQty.toLocaleString("en-US")}</td>
+                    <td>{o.status.replace("_", " ")}</td>
+                    <td>
+                      {isOpen(o) && (
+                        <Button
+                          variant="ghost"
+                          disabled={closing === o.id}
+                          onClick={() => close(o.id)}
+                        >
+                          Close
+                        </Button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
 
       <h3 className="label">Trading partners</h3>
       <p className={styles.rule}>

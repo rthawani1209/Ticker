@@ -208,10 +208,11 @@ export async function fairPlay(db: Db, leagueId: number) {
   );
 
   // Bracket exits are placed and cancelled by the server, not the person, so they're left
-  // out, and so are orders the exchange rejected.
+  // out, and so are orders the exchange rejected and flagged ones a teacher closed.
   const { rows: orders } = await db.query(
     `SELECT portfolio_id, side::text AS side, qty, filled_qty, status::text AS status
-     FROM orders WHERE portfolio_id = ANY($1) AND parent_id IS NULL AND status <> 'rejected'`,
+     FROM orders WHERE portfolio_id = ANY($1) AND parent_id IS NULL AND status <> 'rejected'
+       AND reject_reason IS DISTINCT FROM 'out_of_sync'`,
     [ids],
   );
   const byPortfolio = new Map<number, OrderRow[]>();

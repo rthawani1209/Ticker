@@ -73,6 +73,8 @@ describe("roles", () => {
     "POST /v1/classes/:id/assignments": "professor",
     "DELETE /v1/classes/:id/assignments/:aid": "professor",
     "GET /v1/classes/:id/grades.csv": "professor",
+    "GET /v1/classes/:id/flagged": "professor",
+    "POST /v1/classes/:id/flagged/:oid/close": "professor",
     "GET /v1/admin/users": "admin",
     "PATCH /v1/admin/users/:id": "admin",
     "PUT /v1/admin/bots": "admin",
@@ -121,6 +123,7 @@ describe("roles", () => {
       url
         .replace(":ticker", "NOVA")
         .replace(":aid", "999999")
+        .replace(":oid", "999999")
         .replace("/admin/users/:id", `/admin/users/${student.id}`)
         .replace(":id", String(league.id));
 
@@ -268,6 +271,72 @@ describe("classroom", () => {
     expect((await use("market")).json()).toMatchObject({ error: "type_not_allowed" });
     expect((await use("bracket")).statusCode).toBe(422);
     expect((await use("limit")).statusCode).toBe(201);
+  });
+
+  it("lets the teacher close an order flagged for a check", async () => {
+    const [prof, other, ana] = [await signUp(b), await signUp(b), await signUp(b)];
+    await setRole(prof, "professor");
+    await setRole(other, "professor");
+    const league = (await req(prof, "POST", "/v1/leagues", { name: "Checks" })).json();
+    await req(ana, "POST", "/v1/leagues/join", { code: league.inviteCode });
+    const { rows: pf } = await b.db.query(
+      "SELECT id FROM portfolios WHERE user_id = $1 AND league_id = $2",
+      [ana.id, league.id],
+    );
+    // One the exchange has lost (made-up engine id), flagged, still holding $900 back.
+    const { rows } = await b.db.query(
+      `INSERT INTO orders (user_id, portfolio_id, symbol_id, side, type, tif, price, qty, leaves,
+                           status, engine_order_id, reject_reason)
+       VALUES ($1, $2, 7, 'buy', 'limit', 'gtc', 18000, 5, 5, 'open', $3, 'out_of_sync')
+       RETURNING id`,
+      [ana.id, pf[0].id, 7 * 2 ** 40 + 888_888],
+    );
+    const lost = Number(rows[0].id);
+    // And a real resting one that got flagged, which the exchange still has.
+    const real = (
+      await req(ana, "POST", "/v1/orders", {
+        symbol: "KILN",
+        side: "buy",
+        price: 23_10,
+        qty: 2,
+        league: league.id,
+      })
+    ).json();
+    await b.db.query("UPDATE orders SET reject_reason = 'out_of_sync' WHERE id = $1", [real.id]);
+
+    const list = (await req(prof, "GET", `/v1/classes/${league.id}/flagged`)).json();
+    expect(list.map((o: { id: number }) => o.id).sort()).toEqual([lost, real.id].sort());
+    expect(list[0]).toMatchObject({ username: ana.name, status: "open" });
+    expect((await req(other, "GET", `/v1/classes/${league.id}/flagged`)).statusCode).toBe(404);
+
+    const close = (id: number, who = prof) =>
+      req(who, "POST", `/v1/classes/${league.id}/flagged/${id}/close`);
+    expect((await close(lost, other)).statusCode).toBe(404);
+    // Gone from the exchange: closed here, holds nothing back, still flagged.
+    expect((await close(lost)).json()).toMatchObject({
+      status: "cancelled",
+      leaves: 0,
+      rejectReason: "out_of_sync",
+    });
+    // Still on the exchange: cancelled there.
+    expect((await close(real.id)).json()).toMatchObject({ status: "cancelled", leaves: 0 });
+    expect((await close(lost)).json()).toMatchObject({ error: "not_open" });
+
+    const fine = (
+      await req(ana, "POST", "/v1/orders", {
+        symbol: "KILN",
+        side: "buy",
+        price: 23_20,
+        qty: 1,
+        league: league.id,
+      })
+    ).json();
+    expect((await close(fine.id)).json()).toMatchObject({ error: "not_flagged" });
+    const audited = await b.db.query(
+      "SELECT count(*)::int AS n FROM audit_log WHERE action = 'order_close_flagged' AND user_id = $1",
+      [prof.id],
+    );
+    expect(audited.rows[0].n).toBe(2);
   });
 
   it("takes a role away on the very next request", async () => {

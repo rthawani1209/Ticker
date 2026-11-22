@@ -837,6 +837,52 @@ export class OrderService extends EventEmitter {
     return null;
   }
 
+  // A teacher closing an order flagged out_of_sync. If the exchange still has it open,
+  // it's cancelled there like any other order. If not, nothing will ever tell us how it
+  // ended, so it's closed here and stops holding cash or shares back. A fill that went
+  // missing isn't booked: the teacher checks the student's cash and position. The flag
+  // stays, so the order still shows up as one that needed a person.
+  async closeFlagged(orderId: number): Promise<Order> {
+    const { rows } = await this.db.query(
+      `SELECT id, user_id, portfolio_id, symbol_id, engine_order_id, status, reject_reason
+       FROM orders WHERE id = $1`,
+      [orderId],
+    );
+    const o = rows[0];
+    if (!o) throw new ApiError(404, "not_found", "no such order");
+    if (o.reject_reason !== "out_of_sync")
+      throw new ApiError(409, "not_flagged", "only orders flagged for a check can be closed here");
+    if (!["open", "partially_filled"].includes(o.status))
+      throw new ApiError(409, "not_open", `order is ${o.status}`);
+    if (o.engine_order_id) {
+      if (!this.bridge.connected)
+        throw new ApiError(503, "exchange_down", "the exchange is not connected");
+      const st = await this.bridge.query(o.portfolio_id, Number(o.engine_order_id), o.symbol_id);
+      if (!st) throw new ApiError(504, "no_answer", "the exchange didn't answer, try again");
+      if (st.reason === 0 && st.leaves > 0) return this.cancel(o.user_id, orderId);
+    }
+    // Behind any event already on its way, so a late fill or cancel lands first.
+    const closed = await new Promise<boolean>((resolve, reject) =>
+      this.enqueue(async () => {
+        try {
+          const r = await this.db.query(
+            `UPDATE orders SET status = 'cancelled', leaves = 0, updated_at = now()
+             WHERE id = $1 AND status IN ('open', 'partially_filled') RETURNING id`,
+            [orderId],
+          );
+          resolve(r.rowCount === 1);
+        } catch (err) {
+          reject(err);
+        }
+      }),
+    );
+    const order = (await this.get(o.user_id, orderId))!;
+    if (!closed) throw new ApiError(409, "not_open", `order is ${order.status}`);
+    this.afterUpdate(orderId);
+    this.tell(o.user_id, order);
+    return order;
+  }
+
   // Marks an order whose ledger entry may not match the exchange. The flag stays for
   // good (fills and cancels keep it), so a teacher can find it and put it right.
   private async flagOutOfSync(orderId: number, why: string) {
